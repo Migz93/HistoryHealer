@@ -1,0 +1,498 @@
+{% extends "base.html" %}
+
+{% block title %}HistoryHealer - Unmatched Items{% endblock %}
+
+{% block content %}
+<div id="alerts-container"></div>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <div>
+        <h1 class="h2">Unmatched Items <span class="badge bg-primary">{{ items_count }}</span></h1>
+        <div class="btn-group mt-2" role="group" aria-label="Media type filter">
+            <a href="?media_type=all{% if include_ignored %}&include_ignored=true{% endif %}{% if include_fixed %}&include_fixed=true{% endif %}" class="btn btn-sm btn-{% if media_type == 'all' %}primary{% else %}outline-primary{% endif %}">
+                All
+            </a>
+            <a href="?media_type=movie{% if include_ignored %}&include_ignored=true{% endif %}{% if include_fixed %}&include_fixed=true{% endif %}" class="btn btn-sm btn-{% if media_type == 'movie' %}primary{% else %}outline-primary{% endif %}">
+                Movies
+            </a>
+            <a href="?media_type=episode{% if include_ignored %}&include_ignored=true{% endif %}{% if include_fixed %}&include_fixed=true{% endif %}" class="btn btn-sm btn-{% if media_type == 'episode' %}primary{% else %}outline-primary{% endif %}">
+                Episodes
+            </a>
+        </div>
+    </div>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" id="fix-selected-button" class="btn btn-success" disabled>
+                <i class="bi bi-wrench"></i> Fix Selected
+            </button>
+            <button type="button" id="ignore-selected-button" class="btn btn-secondary" disabled>
+                <i class="bi bi-eye-slash"></i> Ignore Selected
+            </button>
+        </div>
+        <!-- Removed Show Ignored and Show Fixed toggles as requested -->
+    </div>
+</div>
+
+{% if items %}
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="select-all">
+                    </div>
+                </th>
+                <th>
+                    <a href="?media_type={{ media_type }}{% if sort_by == 'type' and sort_order == 'asc' %}&sort_by=type&sort_order=desc{% else %}&sort_by=type&sort_order=asc{% endif %}" class="text-decoration-none">
+                        Type
+                        {% if sort_by == 'type' %}
+                            <i class="bi bi-arrow-{% if sort_order == 'asc' %}up{% else %}down{% endif %}"></i>
+                        {% endif %}
+                    </a>
+                </th>
+                <th>
+                    <a href="?media_type={{ media_type }}{% if sort_by == 'title' and sort_order == 'asc' %}&sort_by=title&sort_order=desc{% else %}&sort_by=title&sort_order=asc{% endif %}" class="text-decoration-none">
+                        Title
+                        {% if sort_by == 'title' %}
+                            <i class="bi bi-arrow-{% if sort_order == 'asc' %}up{% else %}down{% endif %}"></i>
+                        {% endif %}
+                    </a>
+                </th>
+                <th>
+                    <a href="?media_type={{ media_type }}{% if sort_by == 'details' and sort_order == 'asc' %}&sort_by=details&sort_order=desc{% else %}&sort_by=details&sort_order=asc{% endif %}" class="text-decoration-none">
+                        Details
+                        {% if sort_by == 'details' %}
+                            <i class="bi bi-arrow-{% if sort_order == 'asc' %}up{% else %}down{% endif %}"></i>
+                        {% endif %}
+                    </a>
+                </th>
+                <th>
+                    <a href="?media_type={{ media_type }}{% if sort_by == 'watched_date' and sort_order == 'asc' %}&sort_by=watched_date&sort_order=desc{% else %}&sort_by=watched_date&sort_order=asc{% endif %}" class="text-decoration-none">
+                        Watched Date
+                        {% if sort_by == 'watched_date' %}
+                            <i class="bi bi-arrow-{% if sort_order == 'asc' %}up{% else %}down{% endif %}"></i>
+                        {% endif %}
+                    </a>
+                </th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            {% if item.is_group is defined and item.is_group %}
+            <!-- Group row -->
+            <tr class="group-row">
+                <td>
+                    <div class="form-check">
+                        <input class="form-check-input group-checkbox" type="checkbox" data-group="{{ item.key }}">
+                    </div>
+                </td>
+                <td>
+                    {% if item.media_type == 'movie' %}
+                    <span class="badge bg-primary">Movie</span>
+                    {% elif item.media_type == 'episode' %}
+                    <span class="badge bg-info">Episode</span>
+                    {% else %}
+                    <span class="badge bg-secondary">{{ item.media_type }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-link toggle-group" data-group="{{ item.key }}">
+                        <i class="bi bi-plus-circle expand-icon"></i>
+                        <i class="bi bi-dash-circle collapse-icon d-none"></i>
+                    </button>
+                    {{ item.title }} <span class="badge bg-secondary">{{ item.count }}</span>
+                </td>
+                <td>{{ item.details }}</td>
+                <td>{{ item.watched_date }}</td>
+                <td>
+                    <button class="btn btn-sm btn-success fix-group-btn" data-group="{{ item.key }}">
+                        <i class="bi bi-wrench"></i> Fix All
+                    </button>
+                    <button class="btn btn-sm btn-secondary ignore-group-btn" data-group="{{ item.key }}">
+                        <i class="bi bi-eye-slash"></i> Ignore All
+                    </button>
+                </td>
+            </tr>
+            <!-- Group items (initially hidden) -->
+            {% if item.group_items is defined and item.group_items %}{% for subitem in item.group_items %}
+            <tr class="group-item d-none" data-group="{{ item.key }}">
+                <td>
+                    <div class="form-check ps-4">
+                        <input class="form-check-input item-checkbox" type="checkbox" value="{{ subitem.id }}" 
+                               data-group="{{ item.key }}" {% if subitem.fixed == 1 or subitem.ignored == 1 %}disabled{% endif %}>
+                    </div>
+                </td>
+                <td></td>
+                <td class="ps-4">
+                    {% if subitem.media_type == 'movie' %}
+                    {{ subitem.title }} ({{ subitem.year }})
+                    {% elif subitem.media_type == 'episode' %}
+                    {{ subitem.grandparent_title }}
+                    {% else %}
+                    {{ subitem.title }}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if subitem.media_type == 'episode' %}
+                    {{ subitem.parent_title }} - {{ subitem.title }}
+                    {% else %}
+                    Rating Key: {{ subitem.rating_key }}
+                    {% endif %}
+                </td>
+                <td>{{ subitem.watched_date }}</td>
+                <td>
+                    {% if subitem.fixed != 1 and subitem.ignored != 1 %}
+                    <button class="btn btn-sm btn-success fix-item-btn" data-id="{{ subitem.id }}">
+                        <i class="bi bi-wrench"></i> Fix
+                    </button>
+                    <a href="/manual-fix/{{ subitem.id }}" class="btn btn-sm btn-info">
+                        <i class="bi bi-tools"></i> Manual Fix
+                    </a>
+                    <button class="btn btn-sm btn-secondary ignore-item-btn" data-id="{{ subitem.id }}">
+                        <i class="bi bi-eye-slash"></i> Ignore
+                    </button>
+                    {% elif subitem.ignored == 1 %}
+                    <button class="btn btn-sm btn-outline-primary unignore-item-btn" data-id="{{ subitem.id }}">
+                        <i class="bi bi-eye"></i> Unignore
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}{% endif %}
+            {% else %}
+            <!-- Regular item row (for when grouping is disabled) -->
+            <tr class="{% if item.ignored == 1 %}table-secondary{% elif item.fixed == 1 %}table-success{% endif %}">
+                <td>
+                    <div class="form-check">
+                        <input class="form-check-input item-checkbox" type="checkbox" value="{{ item.id }}" 
+                               {% if item.fixed == 1 or item.ignored == 1 %}disabled{% endif %}>
+                    </div>
+                </td>
+                <td>
+                    {% if item.media_type == 'movie' %}
+                    <span class="badge bg-primary">Movie</span>
+                    {% elif item.media_type == 'episode' %}
+                    <span class="badge bg-info">Episode</span>
+                    {% else %}
+                    <span class="badge bg-secondary">{{ item.media_type }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if item.media_type == 'movie' %}
+                    {{ item.title }} ({{ item.year }})
+                    {% elif item.media_type == 'episode' %}
+                    {{ item.grandparent_title }}
+                    {% else %}
+                    {{ item.title }}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if item.media_type == 'episode' %}
+                    {{ item.parent_title }} - {{ item.title }}
+                    {% else %}
+                    Rating Key: {{ item.rating_key }}
+                    {% endif %}
+                </td>
+                <td>{{ item.watched_date }}</td>
+                <td>
+                    {% if item.fixed != 1 and item.ignored != 1 %}
+                    <button class="btn btn-sm btn-success fix-item-btn" data-id="{{ item.id }}">
+                        <i class="bi bi-wrench"></i> Fix
+                    </button>
+                    <a href="/manual-fix/{{ item.id }}" class="btn btn-sm btn-info">
+                        <i class="bi bi-tools"></i> Manual Fix
+                    </a>
+                    <button class="btn btn-sm btn-secondary ignore-item-btn" data-id="{{ item.id }}">
+                        <i class="bi bi-eye-slash"></i> Ignore
+                    </button>
+                    {% elif item.ignored == 1 %}
+                    <button class="btn btn-sm btn-outline-primary unignore-item-btn" data-id="{{ item.id }}">
+                        <i class="bi bi-eye"></i> Unignore
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">
+    No unmatched items found. Run a scan to find unmatched items.
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        // Toggle group expand/collapse
+        $(".toggle-group").click(function() {
+            const groupKey = $(this).data("group");
+            const groupItems = $(`.group-item[data-group="${groupKey}"]`);
+            
+            // Toggle visibility of group items
+            groupItems.toggleClass("d-none");
+            
+            // Toggle expand/collapse icons
+            $(this).find(".expand-icon").toggleClass("d-none");
+            $(this).find(".collapse-icon").toggleClass("d-none");
+        });
+        
+        // Group checkbox handling
+        $(".group-checkbox").change(function() {
+            const groupKey = $(this).data("group");
+            const isChecked = $(this).is(":checked");
+            
+            // Select/deselect all checkboxes in this group that aren't disabled
+            $(`.item-checkbox[data-group="${groupKey}"]:not(:disabled)`).prop("checked", isChecked);
+            
+            updateButtonState();
+        });
+        
+        // Select all checkbox
+        $("#select-all").change(function() {
+            $(".item-checkbox:not(:disabled)").prop("checked", $(this).is(":checked"));
+            updateButtonState();
+        });
+        
+        // Individual checkboxes
+        $(".item-checkbox").change(function() {
+            updateButtonState();
+        });
+        
+        // Fix item button
+        $(".fix-item-btn").click(function() {
+            const itemId = $(this).data("id");
+            fixItem(itemId);
+        });
+        
+        // Fix group button
+        $(".fix-group-btn").click(function() {
+            const groupKey = $(this).data("group");
+            const itemIds = [];
+            
+            // Get all item IDs in this group that aren't fixed or ignored
+            $(`.item-checkbox[data-group="${groupKey}"]:not(:disabled)`).each(function() {
+                itemIds.push($(this).val());
+            });
+            
+            if (itemIds.length > 0) {
+                if (confirm(`Fix all ${itemIds.length} items in this group?`)) {
+                    fixItems(itemIds);
+                }
+            }
+        });
+        
+        // Ignore item button
+        $(".ignore-item-btn").click(function() {
+            const itemId = $(this).data("id");
+            ignoreItems([itemId]);
+        });
+        
+        // Ignore group button
+        $(".ignore-group-btn").click(function() {
+            const groupKey = $(this).data("group");
+            const itemIds = [];
+            
+            // Get all item IDs in this group that aren't fixed or ignored
+            $(`.item-checkbox[data-group="${groupKey}"]:not(:disabled)`).each(function() {
+                itemIds.push($(this).val());
+            });
+            
+            if (itemIds.length > 0) {
+                if (confirm(`Ignore all ${itemIds.length} items in this group?`)) {
+                    ignoreItems(itemIds);
+                }
+            }
+        });
+        
+        // Unignore item button
+        $(".unignore-item-btn").click(function() {
+            const itemId = $(this).data("id");
+            unignoreItems([itemId]);
+        });
+        
+        // Fix selected button
+        $("#fix-selected-button").click(function() {
+            const selectedIds = getSelectedItemIds();
+            if (selectedIds.length > 0) {
+                if (confirm(`Fix ${selectedIds.length} selected items?`)) {
+                    fixItems(selectedIds);
+                }
+            }
+        });
+        
+        // Ignore selected button
+        $("#ignore-selected-button").click(function() {
+            const selectedIds = getSelectedItemIds();
+            if (selectedIds.length > 0) {
+                if (confirm(`Ignore ${selectedIds.length} selected items?`)) {
+                    ignoreItems(selectedIds);
+                }
+            }
+        });
+        
+        // Helper function to get selected item IDs
+        function getSelectedItemIds() {
+            const selectedIds = [];
+            $(".item-checkbox:checked").each(function() {
+                selectedIds.push($(this).val());
+            });
+            return selectedIds;
+        }
+        
+        // Helper function to update button state
+        function updateButtonState() {
+            const selectedCount = $(".item-checkbox:checked").length;
+            $("#fix-selected-button, #ignore-selected-button").prop("disabled", selectedCount === 0);
+        }
+        
+        // Function to fix a single item
+        function fixItem(itemId) {
+            showLoading("Attempting to fix item...");
+            
+            $.ajax({
+                url: `/api/fix-item/${itemId}`,
+                type: "POST",
+                success: function(response) {
+                    hideLoading();
+                    if (response.success) {
+                        showAlert(response.message, "success");
+                        // Reload the page to update the item status
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1500);
+                    } else {
+                        showAlert(response.message, "danger");
+                    }
+                },
+                error: function() {
+                    hideLoading();
+                    showAlert("An error occurred while fixing the item.", "danger");
+                }
+            });
+        }
+        
+        // Function to fix multiple items
+        function fixItems(itemIds) {
+            if (itemIds.length === 0) return;
+            
+            showLoading(`Attempting to fix ${itemIds.length} items...`);
+            
+            let fixedCount = 0;
+            let failedCount = 0;
+            let totalProcessed = 0;
+            
+            // Process each item sequentially
+            function processNextItem(index) {
+                if (index >= itemIds.length) {
+                    // All items processed
+                    hideLoading();
+                    if (failedCount === 0) {
+                        showAlert(`Successfully fixed ${fixedCount} items.`, "success");
+                    } else {
+                        showAlert(`Fixed ${fixedCount} items. Failed to fix ${failedCount} items.`, "warning");
+                    }
+                    // Reload the page to update the item status
+                    setTimeout(function() {
+                        location.reload();
+                    }, 1500);
+                    return;
+                }
+                
+                const itemId = itemIds[index];
+                
+                $.ajax({
+                    url: `/api/fix-item/${itemId}`,
+                    type: "POST",
+                    success: function(response) {
+                        if (response.success) {
+                            fixedCount++;
+                        } else {
+                            failedCount++;
+                        }
+                        totalProcessed++;
+                        updateLoadingMessage(`Processed ${totalProcessed} of ${itemIds.length} items...`);
+                        // Process the next item
+                        processNextItem(index + 1);
+                    },
+                    error: function() {
+                        failedCount++;
+                        totalProcessed++;
+                        updateLoadingMessage(`Processed ${totalProcessed} of ${itemIds.length} items...`);
+                        // Process the next item despite the error
+                        processNextItem(index + 1);
+                    }
+                });
+            }
+            
+            // Start processing from the first item
+            processNextItem(0);
+        }
+        
+        // Function to ignore items
+        function ignoreItems(itemIds) {
+            if (itemIds.length === 0) return;
+            
+            showLoading("Ignoring items...");
+            
+            $.ajax({
+                url: "/api/ignore-items",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ item_ids: itemIds }),
+                success: function(response) {
+                    hideLoading();
+                    if (response.success) {
+                        showAlert(response.message, "success");
+                        // Reload the page to update the item status
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1500);
+                    } else {
+                        showAlert(response.message, "danger");
+                    }
+                },
+                error: function() {
+                    hideLoading();
+                    showAlert("An error occurred while ignoring items.", "danger");
+                }
+            });
+        }
+        
+        // Function to unignore items
+        function unignoreItems(itemIds) {
+            if (itemIds.length === 0) return;
+            
+            showLoading("Unignoring items...");
+            
+            $.ajax({
+                url: "/api/unignore-items",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ item_ids: itemIds }),
+                success: function(response) {
+                    hideLoading();
+                    if (response.success) {
+                        showAlert(response.message, "success");
+                        // Reload the page to update the item status
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1500);
+                    } else {
+                        showAlert(response.message, "danger");
+                    }
+                },
+                error: function() {
+                    hideLoading();
+                    showAlert("An error occurred while unignoring items.", "danger");
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

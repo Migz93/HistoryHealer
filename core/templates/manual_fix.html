@@ -1,0 +1,473 @@
+{% extends "base.html" %}
+
+{% block title %}HistoryHealer - Manual Fix{% endblock %}
+
+{% block content %}
+<div id="alerts-container"></div>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Manual Fix</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="/unmatched" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Unmatched Items
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Item Details</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Basic Information</h6>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <th>Type:</th>
+                                    <td>
+                                        {% if item_data.media_type == 'movie' %}
+                                        <span class="badge bg-primary">Movie</span>
+                                        {% elif item_data.media_type == 'episode' %}
+                                        <span class="badge bg-info">Episode</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ item_data.media_type }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Title:</th>
+                                    <td>
+                                        {% if item_data.media_type == 'movie' %}
+                                        {{ item_data.title }} ({{ item_data.year }})
+                                        {% elif item_data.media_type == 'episode' %}
+                                        {{ item_data.grandparent_title }}
+                                        {% else %}
+                                        {{ item_data.title }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% if item_data.media_type == 'episode' %}
+                                <tr>
+                                    <th>Episode:</th>
+                                    <td>{{ item_data.parent_title }} - {{ item_data.title }}</td>
+                                </tr>
+                                {% endif %}
+                                <tr>
+                                    <th>Watched:</th>
+                                    <td>{{ item.watched_date }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Technical Information</h6>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <th>Rating Key:</th>
+                                    <td>{{ item_data.rating_key }}</td>
+                                </tr>
+                                {% if item_data.media_type == 'episode' %}
+                                <tr>
+                                    <th>Grandparent Rating Key:</th>
+                                    <td>{{ item_data.grandparent_rating_key }}</td>
+                                </tr>
+                                {% endif %}
+                                <tr>
+                                    <th>GUID:</th>
+                                    <td><code>{{ item_data.guid }}</code></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 1: Search -->
+        <div class="card mb-4" id="step-search">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Step 1: Search</h5>
+            </div>
+            <div class="card-body">
+                <p>
+                    The first step is to search for the item in Tautulli. 
+                    {% if item_data.media_type == 'movie' %}
+                    We'll search for the movie by title and year.
+                    {% elif item_data.media_type == 'episode' %}
+                    We'll search for the show by title.
+                    {% endif %}
+                </p>
+                
+                <div class="mb-3">
+                    <label for="search-query" class="form-label">Search Query:</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="search-query" 
+                               value="{% if item_data.media_type == 'movie' %}{{ item_data.title }}{% else %}{{ item_data.title }}{% endif %}">
+                        <button class="btn btn-primary" id="search-button">
+                            <i class="bi bi-search"></i> Search
+                        </button>
+                    </div>
+                    <div class="form-text">
+                        {% if item_data.media_type == 'movie' %}
+                        Searching for movie title. Original movie: {{ item_data.title }} ({{ item_data.year }})
+                        {% else %}
+                        Searching for episode title. Original show: {{ item_data.grandparent_title }}, Episode: {{ item_data.title }}
+                        {% endif %}
+                        <br>You can modify the search query if needed.
+                    </div>
+                </div>
+                
+                <div id="search-results" style="display: none;">
+                    <h6>Search Results:</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Year</th>
+                                    <th>Library</th>
+                                    <th>Rating Key</th>
+                                    {% if item_data.media_type == 'episode' %}
+                                    <th>Grandparent Rating Key</th>
+                                    {% endif %}
+                                    <th>GUID</th>
+                                    <th>Match</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="search-results-body">
+                                <!-- Results will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <button class="btn btn-outline-secondary" id="show-raw-search-results">
+                            <i class="bi bi-code"></i> Show Raw API Response
+                        </button>
+                    </div>
+                    
+                    <div class="mt-3" id="raw-search-results" style="display: none;">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0">Raw API Response</h6>
+                            </div>
+                            <div class="card-body">
+                                <pre id="raw-search-results-content" class="bg-light p-3" style="max-height: 400px; overflow: auto;"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="search-error" class="alert alert-danger" style="display: none;"></div>
+            </div>
+        </div>
+        
+        <!-- Step 2: Update Metadata -->
+        <div class="card mb-4" id="step-update" style="display: none;">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Step 2: Update Metadata</h5>
+            </div>
+            <div class="card-body">
+                <p>
+                    Now we'll update the metadata for this item using the selected match.
+                </p>
+                
+                <div class="mb-3">
+                    <h6>Selected Match:</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Year</th>
+                                    <th>Rating Key</th>
+                                    <th>GUID</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr id="selected-match-row">
+                                    <!-- Selected match will be inserted here -->
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <button class="btn btn-success" id="update-button">
+                        <i class="bi bi-check-circle"></i> Update Metadata
+                    </button>
+                    <button class="btn btn-outline-secondary" id="back-to-search-button">
+                        <i class="bi bi-arrow-left"></i> Back to Search
+                    </button>
+                </div>
+                
+                <div id="update-results" style="display: none;">
+                    <div class="alert alert-success" id="update-success" style="display: none;">
+                        <i class="bi bi-check-circle"></i> <span id="update-success-message"></span>
+                    </div>
+                    
+                    <div class="alert alert-danger" id="update-error" style="display: none;">
+                        <i class="bi bi-exclamation-triangle"></i> <span id="update-error-message"></span>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <button class="btn btn-outline-secondary" id="show-raw-update-results">
+                            <i class="bi bi-code"></i> Show Raw API Response
+                        </button>
+                    </div>
+                    
+                    <div class="mt-3" id="raw-update-results" style="display: none;">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0">Raw API Response</h6>
+                            </div>
+                            <div class="card-body">
+                                <pre id="raw-update-results-content" class="bg-light p-3" style="max-height: 400px; overflow: auto;"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 3: Complete -->
+        <div class="card mb-4" id="step-complete" style="display: none;">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Step 3: Complete</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> The item has been successfully fixed!
+                </div>
+                
+                <div class="mt-3">
+                    <a href="/unmatched" class="btn btn-primary">
+                        <i class="bi bi-arrow-left"></i> Back to Unmatched Items
+                    </a>
+                    <a href="/fixed" class="btn btn-outline-success">
+                        <i class="bi bi-check-circle"></i> View Fixed Items
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        const itemId = {{ item.id }};
+        const mediaType = "{{ item_data.media_type }}";
+        const guid = "{{ item_data.guid }}";
+        const ratingKey = "{{ item_data.rating_key }}";
+
+        let selectedMatch = null;
+        let rawSearchResults = null;
+        let rawUpdateResults = null;
+        
+        // Search button click
+        $("#search-button").click(function() {
+            const searchQuery = $("#search-query").val();
+            if (!searchQuery) {
+                alert("Please enter a search query");
+                return;
+            }
+            
+            showLoading("Searching...");
+            
+            // Reset previous results
+            $("#search-results").hide();
+            $("#search-error").hide();
+            $("#search-results-body").empty();
+            $("#raw-search-results").hide();
+            
+            // Make the search request
+            $.ajax({
+                url: "/api/manual-fix/search",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({
+                    item_id: itemId,
+                    search_query: searchQuery,
+                    guid: guid,
+                    media_type: mediaType
+                }),
+                success: function(response) {
+                    hideLoading();
+                    
+                    if (response.success) {
+                        rawSearchResults = response.raw_response;
+                        
+                        // Display the results
+                        $("#search-results").show();
+                        
+                        if (response.matches.length === 0) {
+                            $("#search-results-body").html('<tr><td colspan="6" class="text-center">No results found</td></tr>');
+                        } else {
+                            response.matches.forEach(function(match) {
+                                const result = match.result;
+                                const isMatch = match.is_match;
+                                const isGuidMatch = match.is_guid_match;
+                                const isYearMatch = match.is_year_match;
+                                const title = result.title || result.grandparent_title || "Unknown";
+                                const year = result.year || "";
+                                const resultRatingKey = mediaType === 'episode' ? result.grandparent_rating_key : result.rating_key;
+                                const resultGuid = result.guid || "";
+                                
+                                const row = `
+                                    <tr class="${isMatch ? 'table-success' : ''}">
+                                        <td>${title}</td>
+                                        <td>${year}</td>
+                                        <td>${result.library_name || 'Unknown'}</td>
+                                        <td>${resultRatingKey}</td>
+                                        ${mediaType === 'episode' ? `<td>${result.grandparent_rating_key || 'N/A'}</td>` : ''}
+                                        <td><code>${resultGuid}</code></td>
+                                        <td>
+                                            ${isGuidMatch ? '<span class="badge bg-success">GUID Match</span><br>' : ''}
+                                            ${isYearMatch ? '<span class="badge bg-info">Year Match</span>' : ''}
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-primary select-match-btn" 
+                                                    data-title="${title}"
+                                                    data-year="${year}"
+                                                    data-rating-key="${resultRatingKey}"
+                                                    data-guid="${resultGuid}">
+                                                Select
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `;
+                                
+                                $("#search-results-body").append(row);
+                            });
+                            
+                            // Bind select buttons
+                            $(".select-match-btn").click(function() {
+                                selectedMatch = {
+                                    title: $(this).data("title"),
+                                    year: $(this).data("year"),
+                                    ratingKey: $(this).data("rating-key"),
+                                    guid: $(this).data("guid")
+                                };
+                                
+                                // Show the update step
+                                $("#step-update").show();
+                                
+                                // Populate the selected match
+                                $("#selected-match-row").html(`
+                                    <td>${selectedMatch.title}</td>
+                                    <td>${selectedMatch.year}</td>
+                                    <td>${selectedMatch.ratingKey}</td>
+                                    <td><code>${selectedMatch.guid}</code></td>
+                                `);
+                                
+                                // Scroll to the update step
+                                $('html, body').animate({
+                                    scrollTop: $("#step-update").offset().top - 70
+                                }, 500);
+                            });
+                        }
+                        
+                        // Raw results toggle
+                        $("#raw-search-results-content").text(JSON.stringify(rawSearchResults, null, 2));
+                    } else {
+                        $("#search-error").text(response.message).show();
+                    }
+                },
+                error: function() {
+                    hideLoading();
+                    $("#search-error").text("An error occurred during the search.").show();
+                }
+            });
+        });
+        
+        // Show raw search results
+        $("#show-raw-search-results").click(function() {
+            $("#raw-search-results").toggle();
+        });
+        
+        // Back to search button
+        $("#back-to-search-button").click(function() {
+            $("#step-update").hide();
+            
+            // Scroll back to search
+            $('html, body').animate({
+                scrollTop: $("#step-search").offset().top - 70
+            }, 500);
+        });
+        
+        // Update button
+        $("#update-button").click(function() {
+            if (!selectedMatch) {
+                alert("No match selected");
+                return;
+            }
+            
+            showLoading("Updating metadata...");
+            
+            // Reset previous results
+            $("#update-results").hide();
+            $("#update-success").hide();
+            $("#update-error").hide();
+            $("#raw-update-results").hide();
+            
+            // Make the update request
+            $.ajax({
+                url: "/api/manual-fix/update",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({
+                    item_id: itemId,
+                    old_rating_key: ratingKey,
+                    new_rating_key: selectedMatch.ratingKey,
+                    media_type: mediaType
+                }),
+                success: function(response) {
+                    hideLoading();
+                    
+                    $("#update-results").show();
+                    rawUpdateResults = response.raw_response;
+                    
+                    if (response.success) {
+                        $("#update-success").show();
+                        $("#update-success-message").text(response.message);
+                        
+                        // Show the complete step
+                        $("#step-complete").show();
+                        
+                        // Scroll to the complete step
+                        $('html, body').animate({
+                            scrollTop: $("#step-complete").offset().top - 70
+                        }, 500);
+                    } else {
+                        $("#update-error").show();
+                        $("#update-error-message").text(response.message);
+                    }
+                    
+                    // Raw results
+                    $("#raw-update-results-content").text(JSON.stringify(rawUpdateResults, null, 2));
+                },
+                error: function() {
+                    hideLoading();
+                    $("#update-results").show();
+                    $("#update-error").show();
+                    $("#update-error-message").text("An error occurred during the update.");
+                }
+            });
+        });
+        
+        // Show raw update results
+        $("#show-raw-update-results").click(function() {
+            $("#raw-update-results").toggle();
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}HistoryHealer - Settings{% endblock %}
+
+{% block content %}
+<div id="alerts-container">
+    {% if request.args.get('success') %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        Settings saved successfully!
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+    
+    {% if request.args.get('error') %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        Error: {{ request.args.get('error') }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+</div>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Settings</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Configuration</h5>
+            </div>
+            <div class="card-body">
+                <form action="/api/save-settings" method="POST">
+                    <div class="mb-3">
+                        <h6 class="fw-bold">Tautulli Connection</h6>
+                        <div class="mb-3">
+                            <label for="base_url" class="form-label">Tautulli Base URL</label>
+                            <input type="text" class="form-control" id="base_url" name="base_url" 
+                                   value="{{ settings['tautulli']['base_url'] }}" required>
+                            <div class="form-text">Example: http://localhost:8181</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="api_key" class="form-label">Tautulli API Key</label>
+                            <input type="text" class="form-control" id="api_key" name="api_key" 
+                                   value="{{ settings['tautulli']['api_key'] }}" required>
+                            <div class="form-text">Found in Tautulli Settings > Web Interface > API</div>
+                        </div>
+                        <div class="mb-3">
+                            <button type="button" id="test-connection" class="btn btn-outline-primary">
+                                <i class="bi bi-check-circle"></i> Test Connection
+                            </button>
+                            <div id="connection-result" class="mt-2"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h6 class="fw-bold">History Range</h6>
+                        <div class="mb-3">
+                            <label for="start_date" class="form-label">Start Date</label>
+                            <input type="text" class="form-control" id="start_date" name="start_date" 
+                                   value="{{ settings['history']['start_date'] }}" required>
+                            <div class="form-text">Format: YYYY-MM-DD</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="end_date" class="form-label">End Date</label>
+                            <input type="text" class="form-control" id="end_date" name="end_date" 
+                                   value="{{ settings['history']['end_date'] }}" required>
+                            <div class="form-text">Format: YYYY-MM-DD or "current"</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h6 class="fw-bold">Libraries</h6>
+                        <div class="mb-3">
+                            <label for="section_ids" class="form-label">Section IDs</label>
+                            <input type="text" class="form-control" id="section_ids" name="section_ids" 
+                                   value="{{ settings['libraries']['section_ids'] }}" required>
+                            <div class="form-text">Comma-separated list of Plex library section IDs (e.g., 1, 2, 3)</div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Help</h5>
+            </div>
+            <div class="card-body">
+                <h6>Finding Your Tautulli API Key</h6>
+                <ol>
+                    <li>Open Tautulli</li>
+                    <li>Go to Settings > Web Interface</li>
+                    <li>Enable API (if not already enabled)</li>
+                    <li>Copy the API Key</li>
+                </ol>
+                
+                <h6>Finding Plex Library Section IDs</h6>
+                <ol>
+                    <li>In Tautulli, go to Libraries</li>
+                    <li>The section ID is shown in the URL when you click on a library</li>
+                    <li>Example: <code>http://localhost:8181/library?section_id=1</code> (section ID is 1)</li>
+                </ol>
+                
+                <h6>Date Format</h6>
+                <p>All dates should be in YYYY-MM-DD format. You can use "current" for the end date to use the current date.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        // Test connection button handler
+        $('#test-connection').on('click', function() {
+            const baseUrl = $('#base_url').val().trim();
+            const apiKey = $('#api_key').val().trim();
+            
+            if (!baseUrl || !apiKey) {
+                showAlert('Please enter both Base URL and API Key', 'warning');
+                return;
+            }
+            
+            // Show loading message
+            showLoading('Testing connection...');
+            
+            // Send test request
+            $.ajax({
+                url: '/api/test-connection',
+                method: 'POST',
+                data: {
+                    base_url: baseUrl,
+                    api_key: apiKey
+                },
+                success: function(response) {
+                    hideLoading();
+                    if (response.success) {
+                        showAlert(response.message, 'success');
+                    } else {
+                        showAlert(response.message, 'danger');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    hideLoading();
+                    showAlert('Error: ' + error, 'danger');
+                }
+            });
+        });
+        
+        // Handle form submission
+        $('form').on('submit', function() {
+            showLoading('Saving settings...');
+        });
+    });
+</script>
+{% endblock %}

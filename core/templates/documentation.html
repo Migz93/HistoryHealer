@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block title %}Documentation - HistoryHealer{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>HistoryHealer Documentation</h1>
+    <p class="lead">This page explains the detailed process of how HistoryHealer works, including all API endpoints and data flow.</p>
+
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h2 class="h4 mb-0">Scan Process</h2>
+        </div>
+        <div class="card-body">
+            <h3>1. Fetching Library Media Info</h3>
+            <p><strong>API Endpoint:</strong> <code>get_library_media_info</code></p>
+            <p>For each library section ID in your configuration, HistoryHealer fetches all media items to build a reference database of what's in your Plex libraries.</p>
+            <p>This data is stored in memory during the scan process and used for comparison with history items.</p>
+            
+            <h3>2. Fetching Watch History</h3>
+            <p><strong>API Endpoint:</strong> <code>get_history</code></p>
+            <p>Parameters:</p>
+            <ul>
+                <li>Date range (from your configuration)</li>
+                <li>Media types: movies and episodes</li>
+                <li>Maximum 100,000 items</li>
+            </ul>
+            <p>This retrieves your complete watch history within the specified date range.</p>
+            
+            <h3>3. Processing History Items</h3>
+            <p>Each history item is processed to determine if it can be matched to a library item:</p>
+            <ul>
+                <li><strong>For Movies:</strong> Attempts to match the <code>rating_key</code> with library media</li>
+                <li><strong>For Episodes:</strong> Attempts to match the <code>grandparent_rating_key</code> (show's rating key) with library media</li>
+            </ul>
+            <p>Unmatched items are stored in the SQLite database for later fixing.</p>
+            
+            <h3>Data Storage</h3>
+            <p>All unmatched items are stored in the SQLite database with their complete JSON data, including:</p>
+            <ul>
+                <li>Rating keys</li>
+                <li>Titles</li>
+                <li>GUIDs</li>
+                <li>Media types</li>
+                <li>Additional metadata</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-success text-white">
+            <h2 class="h4 mb-0">Fix All Process</h2>
+        </div>
+        <div class="card-body">
+            <h3>Process Overview</h3>
+            <p>When you click "Fix All Unmatched", the following process occurs for each unmatched item:</p>
+            
+            <h4>For Movies:</h4>
+            <ol>
+                <li>
+                    <strong>Search Step:</strong>
+                    <ul>
+                        <li><strong>API Endpoint:</strong> <code>search</code></li>
+                        <li><strong>Search Query:</strong> Movie title only (without year)</li>
+                        <li><strong>Fallback Search:</strong> If no match found and title contains a colon (e.g., "Glass Onion: A Knives Out Mystery"), tries searching with just the part before the colon (e.g., "Glass Onion")</li>
+                        <li><strong>Filtering:</strong> Excludes results with "HQ" in the library name</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>Matching Step:</strong>
+                    <ul>
+                        <li>First tries to match by GUID</li>
+                        <li>If no GUID match, tries to match by year</li>
+                        <li>If still no match, uses the first filtered result</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>Update Step:</strong>
+                    <ul>
+                        <li><strong>API Endpoint:</strong> <code>update_metadata_details</code></li>
+                        <li>Parameters: old rating key, new rating key, media type</li>
+                    </ul>
+                </li>
+            </ol>
+            
+            <h4>For TV Episodes:</h4>
+            <ol>
+                <li>
+                    <strong>Search Step:</strong>
+                    <ul>
+                        <li><strong>API Endpoint:</strong> <code>search</code></li>
+                        <li><strong>Search Query:</strong> Show title only (grandparent_title)</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>Matching Step:</strong>
+                    <ul>
+                        <li>Tries to match by GUID only</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>Update Step:</strong>
+                    <ul>
+                        <li><strong>API Endpoint:</strong> <code>update_metadata_details</code></li>
+                        <li>Parameters: old rating key, new rating key, media type</li>
+                    </ul>
+                </li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-info text-white">
+            <h2 class="h4 mb-0">Individual Fix Button</h2>
+        </div>
+        <div class="card-body">
+            <p>The individual "Fix" button performs the exact same process as "Fix All" but for a single item:</p>
+            
+            <ol>
+                <li>Retrieves the unmatched item from the database</li>
+                <li>
+                    <strong>For Movies:</strong>
+                    <ul>
+                        <li>Searches for the movie title (without year)</li>
+                        <li>If no match found and title contains a colon, tries searching with just the part before the colon</li>
+                        <li>Filters out "HQ" libraries</li>
+                        <li>Tries to match by GUID, then by year</li>
+                        <li>Updates metadata if a match is found</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>For Episodes:</strong>
+                    <ul>
+                        <li>Searches for the show title</li>
+                        <li>Tries to match by GUID</li>
+                        <li>Updates metadata if a match is found</li>
+                    </ul>
+                </li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-warning text-dark">
+            <h2 class="h4 mb-0">Manual Fix Process</h2>
+        </div>
+        <div class="card-body">
+            <p>The "Manual Fix" button provides a step-by-step interface for fixing items with your guidance:</p>
+            
+            <h3>Step 1: Search</h3>
+            <ul>
+                <li><strong>API Endpoint:</strong> <code>search</code></li>
+                <li><strong>For Movies:</strong>
+                    <ul>
+                        <li>Default search query: Movie title</li>
+                        <li>Filters out results with "HQ" in library name</li>
+                        <li>Shows which results match by GUID or year</li>
+                    </ul>
+                </li>
+                <li><strong>For Episodes:</strong>
+                    <ul>
+                        <li>Default search query: Show title (grandparent_title)</li>
+                    </ul>
+                </li>
+                <li>You can modify the search query and see the raw API response</li>
+            </ul>
+            
+            <h3>Step 2: Update Metadata</h3>
+            <ul>
+                <li><strong>API Endpoint:</strong> <code>update_metadata_details</code></li>
+                <li>When you select a match, it sends:
+                    <ul>
+                        <li>Old rating key (from history)</li>
+                        <li>New rating key (from search results)</li>
+                        <li>Media type</li>
+                    </ul>
+                </li>
+                <li>You can see the raw API response</li>
+            </ul>
+            
+            <h3>Step 3: Completion</h3>
+            <p>Confirms the successful update and provides options to:</p>
+            <ul>
+                <li>Return to unmatched items list</li>
+                <li>Start a new manual fix</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-dark text-white">
+            <h2 class="h4 mb-0">Item Grouping</h2>
+        </div>
+        <div class="card-body">
+            <p>HistoryHealer automatically groups duplicate items to make management easier:</p>
+            
+            <h3>Grouping Logic</h3>
+            <ul>
+                <li><strong>For Movies:</strong> Groups items with identical titles and years</li>
+                <li><strong>For Episodes:</strong> Groups items with identical show titles (grandparent_title)</li>
+                <li>Only items with 2 or more duplicates are shown in groups</li>
+                <li>Unique items (with no duplicates) are displayed individually</li>
+            </ul>
+            
+            <h3>Group Features</h3>
+            <ul>
+                <li>Expandable/collapsible groups to view individual items</li>
+                <li>"Fix All" button to fix all items in a group at once</li>
+                <li>"Ignore All" button to ignore all items in a group at once</li>
+                <li>Group count indicator showing how many items are in each group</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-danger text-white">
+            <h2 class="h4 mb-0">Duplicate Prevention</h2>
+        </div>
+        <div class="card-body">
+            <p>When running a new scan, HistoryHealer prevents re-adding items that already exist in the database:</p>
+            
+            <h3>Process</h3>
+            <ol>
+                <li>During a scan, each unmatched item is checked against the database</li>
+                <li>Items are matched based on rating_key, media_type, and GUID</li>
+                <li>For episodes, the grandparent_rating_key is also checked</li>
+                <li>If an item already exists (even if it's marked as ignored or fixed), it's skipped</li>
+                <li>A count of skipped items is displayed in the scan results</li>
+            </ol>
+            
+            <p>This prevents previously ignored items from reappearing as unmatched items in subsequent scans.</p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-secondary text-white">
+            <h2 class="h4 mb-0">Data Flow Diagram</h2>
+        </div>
+        <div class="card-body">
+            <pre class="text-muted">
+Tautulli API                 HistoryHealer                 SQLite Database
+    |                              |                              |
+    |  get_library_media_info      |                              |
+    |----------------------------->|                              |
+    |                              |                              |
+    |  get_history                 |                              |
+    |----------------------------->|                              |
+    |                              |  store unmatched items       |
+    |                              |----------------------------->|
+    |                              |                              |
+    |                              |  retrieve unmatched items    |
+    |                              |<-----------------------------|
+    |                              |                              |
+    |  search                      |                              |
+    |<-----------------------------|                              |
+    |                              |                              |
+    |  update_metadata_details     |                              |
+    |<-----------------------------|                              |
+    |                              |  update fixed status         |
+    |                              |----------------------------->|
+            </pre>
+        </div>
+    </div>
+</div>
+{% endblock %}
