@@ -104,22 +104,35 @@
                 </p>
                 
                 <div class="mb-3">
-                    <label for="search-query" class="form-label">Search Query:</label>
-                    <div class="input-group">
-                        <input type="text" class="form-control" id="search-query" 
-                               value="{% if item_data.media_type == 'movie' %}{{ item_data.title }}{% else %}{{ item_data.title }}{% endif %}">
-                        <button class="btn btn-primary" id="search-button">
-                            <i class="bi bi-search"></i> Search
-                        </button>
-                    </div>
-                    <div class="form-text">
+                    <label for="search-query" class="form-label">Search Query</label>
+                    <input type="text" class="form-control" id="search-query" value="{{ item_data.title }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Search Mode</label>
+                    <div class="btn-group" role="group" aria-label="Search mode">
                         {% if item_data.media_type == 'movie' %}
-                        Searching for movie title. Original movie: {{ item_data.title }} ({{ item_data.year }})
+                        <input type="radio" class="btn-check" name="search-mode" id="search-mode-movie" value="movie" checked>
+                        <label class="btn btn-outline-primary" for="search-mode-movie">Movie</label>
                         {% else %}
-                        Searching for episode title. Original show: {{ item_data.grandparent_title }}, Episode: {{ item_data.title }}
+                        <input type="radio" class="btn-check" name="search-mode" id="search-mode-episode" value="episode" checked>
+                        <label class="btn btn-outline-primary" for="search-mode-episode">Episode</label>
+                        <input type="radio" class="btn-check" name="search-mode" id="search-mode-show" value="show">
+                        <label class="btn btn-outline-primary" for="search-mode-show">TV Show</label>
                         {% endif %}
-                        <br>You can modify the search query if needed.
                     </div>
+                </div>
+                <button type="button" class="btn btn-primary" id="search-button">Search</button>
+                
+                <div class="form-text">
+                    {% if item_data.media_type == 'movie' %}
+                    Searching for movie title.<br>
+                    Original movie: <a href="#" class="search-suggestion">{{ item_data.title }} ({{ item_data.year }})</a>
+                    {% else %}
+                    Searching for episode title.<br>
+                    Original show: <a href="#" class="search-suggestion">{{ item_data.grandparent_title }}</a><br>
+                    Episode: <a href="#" class="search-suggestion">{{ item_data.title }}</a>
+                    {% endif %}
+                    <br>Click a title above to use it as the search query, or modify the search query as needed.
                 </div>
                 
                 <div id="search-results" style="display: none;">
@@ -263,197 +276,235 @@
 
 {% block extra_js %}
 <script>
-    $(document).ready(function() {
-        const itemId = {{ item.id }};
-        const mediaType = "{{ item_data.media_type }}";
-        const guid = "{{ item_data.guid }}";
-        const ratingKey = "{{ item_data.rating_key }}";
-
-        let selectedMatch = null;
-        let rawSearchResults = null;
-        let rawUpdateResults = null;
+$(document).ready(function() {
+    // Initialize variables
+    const itemId = "{{ item.id }}";
+    const mediaType = "{{ item_data.media_type }}";
+    const guid = "{{ item_data.guid }}";
+    const ratingKey = "{{ item_data.rating_key }}";
+    const grandparentRatingKey = "{{ item_data.grandparent_rating_key }}";
+    
+    let selectedMatch = null;
+    let rawSearchResults = null;
+    let rawUpdateResults = null;
+    
+    function showLoading(message) {
+        $("#loading-message").text(message || "Loading...");
+        $("#loading-overlay").show();
+    }
+    
+    function hideLoading() {
+        $("#loading-overlay").hide();
+    }
+    
+    // Handle clickable suggestions
+    console.log('Setting up click handler for .search-suggestion');
+    $(".search-suggestion").on('click', function(e) {
+        console.log('.search-suggestion clicked');
+        e.preventDefault();
+        const text = $(this).text();
+        console.log('Suggestion text:', text);
+        $("#search-query").val(text);
+        console.log('Search suggestion clicked:', text);
+    });
         
-        // Search button click
-        $("#search-button").click(function() {
-            const searchQuery = $("#search-query").val();
-            if (!searchQuery) {
-                alert("Please enter a search query");
-                return;
-            }
-            
-            showLoading("Searching...");
-            
-            // Reset previous results
-            $("#search-results").hide();
-            $("#search-error").hide();
-            $("#search-results-body").empty();
-            $("#raw-search-results").hide();
-            
-            // Make the search request
-            $.ajax({
-                url: "/api/manual-fix/search",
-                type: "POST",
-                contentType: "application/json",
-                data: JSON.stringify({
-                    item_id: itemId,
-                    search_query: searchQuery,
-                    guid: guid,
-                    media_type: mediaType
-                }),
-                success: function(response) {
-                    hideLoading();
+    // Handle search button click
+    console.log('Setting up click handler for #search-button');
+    $("#search-button").click(function() {
+        console.log('#search-button clicked');
+        const searchQuery = $("#search-query").val();
+        if (!searchQuery) {
+            alert("Please enter a search query");
+            return;
+        }
+        
+        const searchMode = $('input[name="search-mode"]:checked').val();
+        console.log('Searching with mode:', searchMode);
+        
+        showLoading("Searching...");
+        
+        // Reset previous results
+        $("#search-results").hide();
+        $("#search-error").hide();
+        $("#search-results-body").empty();
+        $("#raw-search-results").hide();
+        
+        // Make the search request
+        $.ajax({
+            url: "/api/manual-fix/search",
+            type: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({
+                item_id: itemId,
+                search_query: searchQuery,
+                guid: guid,
+                media_type: searchMode
+            }),
+            success: function(response) {
+                if (response.success) {
+                    rawSearchResults = response.raw_response;
+                    $("#search-results").show();
                     
-                    if (response.success) {
-                        rawSearchResults = response.raw_response;
-                        
-                        // Display the results
-                        $("#search-results").show();
-                        
-                        if (response.matches.length === 0) {
-                            $("#search-results-body").html('<tr><td colspan="6" class="text-center">No results found</td></tr>');
-                        } else {
-                            response.matches.forEach(function(match) {
-                                const result = match.result;
-                                const isMatch = match.is_match;
-                                const isGuidMatch = match.is_guid_match;
-                                const isYearMatch = match.is_year_match;
-                                const title = result.title || result.grandparent_title || "Unknown";
-                                const year = result.year || "";
-                                const resultRatingKey = mediaType === 'episode' ? result.grandparent_rating_key : result.rating_key;
-                                const resultGuid = result.guid || "";
-                                
-                                const row = `
-                                    <tr class="${isMatch ? 'table-success' : ''}">
-                                        <td>${title}</td>
-                                        <td>${year}</td>
-                                        <td>${result.library_name || 'Unknown'}</td>
-                                        <td>${resultRatingKey}</td>
-                                        ${mediaType === 'episode' ? `<td>${result.grandparent_rating_key || 'N/A'}</td>` : ''}
-                                        <td><code>${resultGuid}</code></td>
-                                        <td>
-                                            ${isGuidMatch ? '<span class="badge bg-success">GUID Match</span><br>' : ''}
-                                            ${isYearMatch ? '<span class="badge bg-info">Year Match</span>' : ''}
-                                        </td>
-                                        <td>
-                                            <button class="btn btn-sm btn-primary select-match-btn" 
-                                                    data-title="${title}"
-                                                    data-year="${year}"
-                                                    data-rating-key="${resultRatingKey}"
-                                                    data-guid="${resultGuid}">
-                                                Select
-                                            </button>
-                                        </td>
-                                    </tr>
-                                `;
-                                
-                                $("#search-results-body").append(row);
-                            });
+                    if (!response.matches || response.matches.length === 0) {
+                        $("#search-results-body").html('<tr><td colspan="6" class="text-center">No results found</td></tr>');
+                    } else {
+                        response.matches.forEach(function(match) {
+                            const result = match.result;
+                            const title = result.title || result.grandparent_title || "Unknown";
+                            const year = result.year || "";
+                            const resultRatingKey = mediaType === 'episode' ? result.grandparent_rating_key : result.rating_key;
+                            const resultGuid = result.guid || "";
                             
-                            // Bind select buttons
-                            $(".select-match-btn").click(function() {
-                                selectedMatch = {
-                                    title: $(this).data("title"),
-                                    year: $(this).data("year"),
-                                    ratingKey: $(this).data("rating-key"),
-                                    guid: $(this).data("guid")
-                                };
-                                
-                                // Show the update step
-                                $("#step-update").show();
-                                
-                                // Populate the selected match
-                                $("#selected-match-row").html(`
-                                    <td>${selectedMatch.title}</td>
-                                    <td>${selectedMatch.year}</td>
-                                    <td>${selectedMatch.ratingKey}</td>
-                                    <td><code>${selectedMatch.guid}</code></td>
-                                `);
-                                
-                                // Scroll to the update step
-                                $('html, body').animate({
-                                    scrollTop: $("#step-update").offset().top - 70
-                                }, 500);
-                            });
-                        }
+                            const row = $('<tr>')
+                                .addClass(match.is_match ? 'table-success' : '')
+                                .append($('<td>').text(title))
+                                .append($('<td>').text(year))
+                                .append($('<td>').text(result.library_name || 'Unknown'))
+                                .append($('<td>').text(resultRatingKey));
+                            
+                            if (mediaType === 'episode') {
+                                row.append($('<td>').text(result.grandparent_rating_key || 'N/A'));
+                            }
+                            
+                            row.append($('<td>').append($('<code>').text(resultGuid)));
+                            
+                            const matchBadges = $('<td>');
+                            if (match.is_guid_match) {
+                                matchBadges.append($('<span class="badge bg-success">').text('GUID Match')).append('<br>');
+                            }
+                            if (match.is_year_match) {
+                                matchBadges.append($('<span class="badge bg-info">').text('Year Match'));
+                            }
+                            row.append(matchBadges);
+                            
+                            const selectBtn = $('<button>')
+                                .addClass('btn btn-sm btn-primary select-match-btn')
+                                .text('Select')
+                                .data({
+                                    title: title,
+                                    year: year,
+                                    'rating-key': resultRatingKey,
+                                    guid: resultGuid,
+                                    type: searchMode
+                                });
+                            
+                            row.append($('<td>').append(selectBtn));
+                            $("#search-results-body").append(row);
+                        });
                         
-                        // Raw results toggle
-                        $("#raw-search-results-content").text(JSON.stringify(rawSearchResults, null, 2));
-                    } else {
-                        $("#search-error").text(response.message).show();
+                        // Bind select buttons
+                        $(".select-match-btn").click(function() {
+                            selectedMatch = {
+                                title: $(this).data("title"),
+                                year: $(this).data("year"),
+                                ratingKey: $(this).data("rating-key").toString(),
+                                guid: $(this).data("guid"),
+                                type: $(this).data("type")
+                            };
+                            
+                            console.log('Selected match:', selectedMatch);
+                            $("#step-update").show();
+                            
+                            $("#selected-match-row").html(`
+                                <td>${selectedMatch.title}</td>
+                                <td>${selectedMatch.year}</td>
+                                <td>${selectedMatch.ratingKey}</td>
+                                <td><code>${selectedMatch.guid}</code></td>
+                            `);
+                            
+                            $('html, body').animate({
+                                scrollTop: $("#step-update").offset().top - 70
+                            }, 500);
+                        });
                     }
-                },
-                error: function() {
-                    hideLoading();
-                    $("#search-error").text("An error occurred during the search.").show();
+                    
+                    $("#raw-search-results-content").text(JSON.stringify(rawSearchResults, null, 2));
+                } else {
+                    $("#search-error").text(response.message).show();
                 }
-            });
-        });
-        
-        // Show raw search results
-        $("#show-raw-search-results").click(function() {
-            $("#raw-search-results").toggle();
-        });
-        
-        // Back to search button
-        $("#back-to-search-button").click(function() {
-            $("#step-update").hide();
-            
-            // Scroll back to search
-            $('html, body').animate({
-                scrollTop: $("#step-search").offset().top - 70
-            }, 500);
-        });
-        
-        // Update button
-        $("#update-button").click(function() {
-            if (!selectedMatch) {
-                alert("No match selected");
-                return;
+                hideLoading();
+            },
+            error: function() {
+                $("#search-error").text("An error occurred during the search.").show();
+                hideLoading();
             }
-            
-            showLoading("Updating metadata...");
-            
-            // Reset previous results
-            $("#update-results").hide();
-            $("#update-success").hide();
-            $("#update-error").hide();
-            $("#raw-update-results").hide();
-            
-            // Make the update request
-            $.ajax({
-                url: "/api/manual-fix/update",
-                type: "POST",
-                contentType: "application/json",
-                data: JSON.stringify({
-                    item_id: itemId,
-                    old_rating_key: ratingKey,
-                    new_rating_key: selectedMatch.ratingKey,
-                    media_type: mediaType
-                }),
-                success: function(response) {
-                    hideLoading();
-                    
-                    $("#update-results").show();
+        });
+        });
+        
+    // Toggle raw results buttons
+    $("#show-raw-search-results").click(function() {
+        $("#raw-search-results").toggle();
+    });
+    
+    $("#show-raw-update-results").click(function() {
+        $("#raw-update-results").toggle();
+    });
+    
+    // Back to search button
+    $("#back-to-search-button").click(function() {
+        $("#step-update").hide();
+        
+        // Scroll back to search
+        $('html, body').animate({
+            scrollTop: $("#step-search").offset().top - 70
+        }, 500);
+    });
+    
+    // Update button click handler
+    $("#update-button").click(function() {
+        if (!selectedMatch) {
+            alert("Please select a match first");
+            return;
+        }
+        
+        const oldKey = selectedMatch.type === 'show' ? grandparentRatingKey : ratingKey;
+        const updateType = selectedMatch.type === 'show' ? 'show' : mediaType;
+        
+        console.log('Updating metadata:', {
+            item_id: itemId,
+            old_rating_key: oldKey,
+            new_rating_key: selectedMatch.ratingKey,
+            media_type: updateType,
+            selected_type: selectedMatch.type
+        });
+        
+        showLoading("Updating metadata...");
+        
+        // Reset previous results
+        $("#update-results").hide();
+        $("#update-success").hide();
+        $("#update-error").hide();
+        $("#raw-update-results").hide();
+        
+        $.ajax({
+            url: "/api/manual-fix/update",
+            type: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({
+                item_id: itemId,
+                old_rating_key: oldKey,
+                new_rating_key: selectedMatch.ratingKey,
+                media_type: updateType
+            }),
+            success: function(response) {
+                hideLoading();
+                $("#update-results").show();
+                
+                if (response.success) {
                     rawUpdateResults = response.raw_response;
+                    $("#update-success").show();
+                    $("#update-error").hide();
+                    $("#step-complete").show();
                     
-                    if (response.success) {
-                        $("#update-success").show();
-                        $("#update-success-message").text(response.message);
-                        
-                        // Show the complete step
-                        $("#step-complete").show();
-                        
-                        // Scroll to the complete step
-                        $('html, body').animate({
-                            scrollTop: $("#step-complete").offset().top - 70
-                        }, 500);
-                    } else {
-                        $("#update-error").show();
-                        $("#update-error-message").text(response.message);
-                    }
-                    
-                    // Raw results
-                    $("#raw-update-results-content").text(JSON.stringify(rawUpdateResults, null, 2));
+                    $('html, body').animate({
+                        scrollTop: $("#step-complete").offset().top - 70
+                    }, 500);
+                } else {
+                    $("#update-success").hide();
+                    $("#update-error").text(response.message).show();
+                }
+                
+                $("#raw-update-results-content").text(JSON.stringify(rawUpdateResults, null, 2));
                 },
                 error: function() {
                     hideLoading();

@@ -63,15 +63,13 @@
                         <li><strong>API Endpoint:</strong> <code>search</code></li>
                         <li><strong>Search Query:</strong> Movie title only (without year)</li>
                         <li><strong>Fallback Search:</strong> If no match found and title contains a colon (e.g., "Glass Onion: A Knives Out Mystery"), tries searching with just the part before the colon (e.g., "Glass Onion")</li>
-                        <li><strong>Filtering:</strong> Excludes results with "HQ" in the library name</li>
+                        <li><strong>Filtering:</strong> Filters results based on the configured Section IDs in Settings. Only items from these Plex library sections will be considered for automatic fixing.</li>
                     </ul>
                 </li>
                 <li>
                     <strong>Matching Step:</strong>
                     <ul>
-                        <li>First tries to match by GUID</li>
-                        <li>If no GUID match, tries to match by year</li>
-                        <li>If still no match, uses the first filtered result</li>
+                        <li>Tries to match by the movie's GUID. An exact GUID match is required for the fix to proceed. If no exact GUID match is found, the automatic fix for this movie will fail.</li>
                     </ul>
                 </li>
                 <li>
@@ -93,10 +91,24 @@
                     </ul>
                 </li>
                 <li>
-                    <strong>Matching Step:</strong>
-                    <ul>
-                        <li>Tries to match by GUID only</li>
-                    </ul>
+                    <strong>Matching Step (Two-Attempt Process):</strong>
+                    <ol>
+                        <li>
+                            <strong>Attempt 1: Match Episode by Episode GUID</strong>
+                            <ul>
+                                <li>Searches for the episode using its own title and its specific episode GUID. Simplified title variations (e.g., removing content after a colon) may be attempted if the initial search fails.</li>
+                                <li>If an exact match for the episode's GUID is found, this match is used.</li>
+                            </ul>
+                        </li>
+                        <li>
+                            <strong>Attempt 2: Match Show by Show GUID (if Episode Match Fails)</strong>
+                            <ul>
+                                <li>If no direct episode GUID match is found, the system then searches for the TV show using the show's title (grandparent title) and the show's specific GUID. Simplified title variations (e.g., removing content in brackets) may be attempted if the initial search fails.</li>
+                                <li>If an exact match for the show's GUID is found, this show match is used to update the episode.</li>
+                            </ul>
+                        </li>
+                        <li>If neither attempt results in an exact GUID match (either for the episode itself or its parent show), the automatic fix for this episode will fail.</li>
+                    </ol>
                 </li>
                 <li>
                     <strong>Update Step:</strong>
@@ -123,7 +135,7 @@
                     <ul>
                         <li>Searches for the movie title (without year)</li>
                         <li>If no match found and title contains a colon, tries searching with just the part before the colon</li>
-                        <li>Filters out "HQ" libraries</li>
+                        <li>Filters results based on the configured Section IDs in Settings during automatic fix attempts.</li>
                         <li>Tries to match by GUID, then by year</li>
                         <li>Updates metadata if a match is found</li>
                     </ul>
@@ -149,26 +161,42 @@
             
             <h3>Step 1: Search</h3>
             <ul>
-                <li><strong>API Endpoint:</strong> <code>search</code></li>
+                <li><strong>API Endpoint:</strong> Tautulli's <code>search</code> command is used internally.</li>
                 <li><strong>For Movies:</strong>
                     <ul>
-                        <li>Default search query: Movie title</li>
-                        <li>Filters out results with "HQ" in library name</li>
-                        <li>Shows which results match by GUID or year</li>
+                        <li>The search is performed for <strong>movie</strong> titles.</li>
+                        <li>The default search query is the original movie title from the history item. You can modify this query.</li>
+                        <li>Search results will include items from all libraries. The automatic filtering by Section IDs (configured in Settings) is not applied during manual search, allowing you to see all potential matches.</li>
+                        <li>The system indicates which results match by GUID or year to help you choose the correct item.</li>
+                        <li>The selected match will provide its <code>rating_key</code> for the fix.</li>
                     </ul>
                 </li>
                 <li><strong>For Episodes:</strong>
                     <ul>
-                        <li>Default search query: Show title (grandparent_title)</li>
+                        <li>You are given the option to search for either <strong>show titles</strong> or <strong>episode titles</strong>.</li>
+                        <li><strong>When searching by Show Title:</strong>
+                            <ul>
+                                <li>The default search query is the original show title (grandparent title) from the history item. You can modify this query.</li>
+                                <li>The selected match (a TV show) will provide its <code>rating_key</code>. This key is used as the <code>grandparent_rating_key</code> for the episode being fixed, effectively linking the episode to the chosen show.</li>
+                            </ul>
+                        </li>
+                        <li><strong>When searching by Episode Title:</strong>
+                            <ul>
+                                <li>The default search query is the original episode title from the history item. You can modify this query.</li>
+                                <li>The selected match (an episode) will provide its specific <code>rating_key</code>. This key is used directly to fix the episode.</li>
+                            </ul>
+                        </li>
+                        <li>For both episode search types, results include items from all libraries, bypassing the automatic Section ID filtering.</li>
                     </ul>
                 </li>
-                <li>You can modify the search query and see the raw API response</li>
+                <li>You can always modify the suggested search query and view the raw API response from Tautulli for troubleshooting or advanced matching.</li>
             </ul>
             
             <h3>Step 2: Update Metadata</h3>
             <ul>
-                <li><strong>API Endpoint:</strong> <code>update_metadata_details</code></li>
-                <li>When you select a match, it sends:
+                <li><strong>API Endpoint:</strong> <code>/api/manual-fix/update</code> (HistoryHealer internal API)</li>
+                <li>This process updates HistoryHealer's local database, re-linking the unmatched history entry to the <code>new_rating_key</code> of the Plex item you selected. It <strong>also</strong> attempts to call Tautulli's <code>update_metadata_details</code> command to ensure the fix is reflected in Tautulli itself. The success or failure of the Tautulli update will be noted in the fix details.</li>
+                <li>When you select a match, the application sends to its backend:
                     <ul>
                         <li>Old rating key (from history)</li>
                         <li>New rating key (from search results)</li>

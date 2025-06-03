@@ -393,10 +393,87 @@ class Database:
         with self.lock:
             try:
                 self.cursor.execute("SELECT * FROM unmatched_items WHERE id = ?", (item_id,))
-                return self.cursor.fetchone()
-            except sqlite3.Error as e:
-                print(f"Error getting unmatched item: {e}")
+                item = self.cursor.fetchone()
+                if item:
+                    # Convert to dict and add status based on flags
+                    item_dict = dict(item)
+                    if item_dict['fixed']:
+                        item_dict['status'] = 'fixed'
+                    elif item_dict['ignored']:
+                        item_dict['status'] = 'ignored'
+                    else:
+                        item_dict['status'] = 'unmatched'
+                    return item_dict
                 return None
+            except sqlite3.Error as e:
+                logging.error(f"Error getting unmatched item: {e}")
+                return None
+
+    def get_item_by_id(self, item_id):
+        """Alias for get_unmatched_item for compatibility."""
+        return self.get_unmatched_item(item_id)
+
+    def update_item_status(self, item_id, status):
+        """Update the status of an item.
+        
+        Args:
+            item_id (int): The ID of the item to update
+            status (str): The new status ('fixed', 'ignored', or 'unmatched')
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        with self.lock:
+            try:
+                now = int(datetime.now().timestamp())
+                if status == 'fixed':
+                    self.cursor.execute(
+                        "UPDATE unmatched_items SET fixed = 1, ignored = 0, fix_date = ? WHERE id = ?",
+                        (now, item_id)
+                    )
+                elif status == 'ignored':
+                    self.cursor.execute(
+                        "UPDATE unmatched_items SET ignored = 1, fixed = 0 WHERE id = ?",
+                        (item_id,)
+                    )
+                elif status == 'unmatched':
+                    self.cursor.execute(
+                        "UPDATE unmatched_items SET ignored = 0, fixed = 0 WHERE id = ?",
+                        (item_id,)
+                    )
+                else:
+                    logging.error(f"Invalid status: {status}")
+                    return False
+                
+                self.conn.commit()
+                return True
+            except sqlite3.Error as e:
+                logging.error(f"Error updating item status: {e}")
+                self.conn.rollback()
+                return False
+
+    def update_item_rating_key(self, item_id, new_rating_key):
+        """Update the rating key of an item.
+        
+        Args:
+            item_id (int): The ID of the item to update
+            new_rating_key (str): The new rating key
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        with self.lock:
+            try:
+                self.cursor.execute(
+                    "UPDATE unmatched_items SET rating_key = ? WHERE id = ?",
+                    (new_rating_key, item_id)
+                )
+                self.conn.commit()
+                return True
+            except sqlite3.Error as e:
+                logging.error(f"Error updating item rating key: {e}")
+                self.conn.rollback()
+                return False
     
     def mark_item_fixed(self, item_id, fix_details):
         """Mark an item as fixed with details about the fix."""
@@ -410,8 +487,47 @@ class Database:
                 self.conn.commit()
                 return True
             except sqlite3.Error as e:
-                print(f"Error marking item as fixed: {e}")
+                logging.error(f"Error marking item as fixed: {e}")
                 self.conn.rollback()
+                return False
+    
+    def revert_item_to_unmatched(self, item_id):
+        """Revert a fixed item back to unmatched status, restoring original rating key."""
+        with self.lock:
+            try:
+                # First, get the item to access its json_data
+                self.cursor.execute("SELECT json_data FROM unmatched_items WHERE id = ?", (item_id,))
+                item_row = self.cursor.fetchone()
+                if not item_row:
+                    logging.error(f"Item with ID {item_id} not found for revert.")
+                    return False
+                
+                item_data = json.loads(item_row['json_data'])
+                original_rating_key = item_data.get('rating_key')
+                if not original_rating_key:
+                    logging.error(f"Original rating_key not found in json_data for item {item_id}.")
+                    # Fallback or decide how to handle - for now, prevent update if no original key
+                    return False
+
+                self.cursor.execute(
+                    """UPDATE unmatched_items SET 
+                       fixed = 0, 
+                       ignored = 0, 
+                       fix_date = NULL, 
+                       fix_details = NULL, 
+                       rating_key = ? 
+                       WHERE id = ?""",
+                    (original_rating_key, item_id)
+                )
+                self.conn.commit()
+                logging.info(f"Item {item_id} reverted to unmatched with rating_key {original_rating_key}.")
+                return True
+            except sqlite3.Error as e:
+                logging.error(f"Error reverting item {item_id} to unmatched: {e}")
+                self.conn.rollback()
+                return False
+            except json.JSONDecodeError as e:
+                logging.error(f"Error decoding json_data for item {item_id}: {e}")
                 return False
     
     def mark_items_ignored(self, item_ids, ignored=True):
@@ -438,12 +554,14 @@ class Database:
                 self.conn.rollback()
                 return False
     
-    def get_ignored_items(self, page=1, per_page=50):
-        """Get ignored items with pagination.
+    def get_ignored_items(self, page=1, per_page=50, sort_by=None, sort_order='asc'):
+        """Get ignored items with pagination and sorting.
         
         Args:
             page (int): Page number (1-indexed)
             per_page (int): Number of items per page
+            sort_by (str, optional): Column to sort by ('type', 'title', 'details', 'watched_date')
+            sort_order (str): Sort order ('asc' or 'desc')
             
         Returns:
             tuple: (list of items, total count)
@@ -453,15 +571,31 @@ class Database:
                 # Calculate offset
                 offset = (page - 1) * per_page
                 
+                # Build base query
+                query = "SELECT * FROM unmatched_items WHERE ignored = 1 AND fixed = 0"
+                
+                # Add sorting
+                if sort_by == 'type':
+                    query += f" ORDER BY media_type {sort_order.upper()}"
+                elif sort_by == 'title':
+                    query += f" ORDER BY CASE WHEN grandparent_title != '' THEN grandparent_title ELSE title END {sort_order.upper()}"
+                elif sort_by == 'details':
+                    query += f" ORDER BY CASE WHEN parent_title != '' THEN parent_title ELSE title END {sort_order.upper()}, title {sort_order.upper()}"
+                elif sort_by == 'watched_date':
+                    query += f" ORDER BY date {sort_order.upper()}"
+                else:
+                    # Default sort by date descending
+                    query += " ORDER BY date DESC"
+                
+                # Add pagination
+                query += " LIMIT ? OFFSET ?"
+                
                 # Get total count
                 self.cursor.execute("SELECT COUNT(*) as count FROM unmatched_items WHERE ignored = 1 AND fixed = 0")
                 total = self.cursor.fetchone()['count']
                 
                 # Get items for current page
-                self.cursor.execute(
-                    "SELECT * FROM unmatched_items WHERE ignored = 1 AND fixed = 0 ORDER BY date DESC LIMIT ? OFFSET ?",
-                    (per_page, offset)
-                )
+                self.cursor.execute(query, (per_page, offset))
                 items = self.cursor.fetchall()
                 
                 return items, total
@@ -469,12 +603,14 @@ class Database:
                 logging.error(f"Error getting ignored items: {e}")
                 return [], 0
     
-    def get_fixed_items(self, page=1, per_page=50):
-        """Get fixed items with pagination.
+    def get_fixed_items(self, page=1, per_page=50, sort_by=None, sort_order='asc'):
+        """Get fixed items with pagination and sorting.
         
         Args:
             page (int): Page number (1-indexed)
             per_page (int): Number of items per page
+            sort_by (str, optional): Column to sort by ('type', 'title', 'details', 'watched_date', 'fix_date')
+            sort_order (str): Sort order ('asc' or 'desc')
             
         Returns:
             tuple: (list of items, total count)
@@ -484,15 +620,33 @@ class Database:
                 # Calculate offset
                 offset = (page - 1) * per_page
                 
+                # Build base query
+                query = "SELECT * FROM unmatched_items WHERE fixed = 1"
+                
+                # Add sorting
+                if sort_by == 'type':
+                    query += f" ORDER BY media_type {sort_order.upper()}"
+                elif sort_by == 'title':
+                    query += f" ORDER BY CASE WHEN grandparent_title != '' THEN grandparent_title ELSE title END {sort_order.upper()}"
+                elif sort_by == 'details':
+                    query += f" ORDER BY CASE WHEN parent_title != '' THEN parent_title ELSE title END {sort_order.upper()}, title {sort_order.upper()}"
+                elif sort_by == 'watched_date':
+                    query += f" ORDER BY date {sort_order.upper()}"
+                elif sort_by == 'fix_date':
+                    query += f" ORDER BY fix_date {sort_order.upper()}"
+                else:
+                    # Default sort by fix_date descending
+                    query += " ORDER BY fix_date DESC"
+                
+                # Add pagination
+                query += " LIMIT ? OFFSET ?"
+                
                 # Get total count
                 self.cursor.execute("SELECT COUNT(*) as count FROM unmatched_items WHERE fixed = 1")
                 total = self.cursor.fetchone()['count']
                 
                 # Get items for current page
-                self.cursor.execute(
-                    "SELECT * FROM unmatched_items WHERE fixed = 1 ORDER BY fix_date DESC LIMIT ? OFFSET ?",
-                    (per_page, offset)
-                )
+                self.cursor.execute(query, (per_page, offset))
                 items = self.cursor.fetchall()
                 
                 return items, total

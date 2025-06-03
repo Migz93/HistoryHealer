@@ -19,41 +19,38 @@
 
 <!-- Stats Cards -->
 <div class="row">
-    <div class="col-md-3">
-        <div class="card text-white bg-danger">
-            <div class="card-body">
-                <h5 class="card-title">Unmatched Items</h5>
-                <h2 class="card-text">{{ stats.unmatched if stats else 0 }}</h2>
-                <p class="card-text">Items needing attention</p>
+    <div class="col-md-4">
+        <a href="/unmatched" class="text-decoration-none">
+            <div class="card text-white bg-danger h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Unmatched Items</h5>
+                    <h2 class="card-text">{{ stats.unmatched if stats else 0 }}</h2>
+                    <p class="card-text">Items needing attention</p>
+                </div>
             </div>
-        </div>
+        </a>
     </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-success">
-            <div class="card-body">
-                <h5 class="card-title">Fixed Items</h5>
-                <h2 class="card-text">{{ stats.fixed if stats else 0 }}</h2>
-                <p class="card-text">Successfully repaired</p>
+    <div class="col-md-4">
+        <a href="/fixed" class="text-decoration-none">
+            <div class="card text-white bg-success h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Fixed Items</h5>
+                    <h2 class="card-text">{{ stats.fixed if stats else 0 }}</h2>
+                    <p class="card-text">Successfully repaired</p>
+                </div>
             </div>
-        </div>
+        </a>
     </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-secondary">
-            <div class="card-body">
-                <h5 class="card-title">Ignored Items</h5>
-                <h2 class="card-text">{{ stats.ignored if stats else 0 }}</h2>
-                <p class="card-text">Marked as ignored</p>
+    <div class="col-md-4">
+        <a href="/ignored" class="text-decoration-none">
+            <div class="card text-white bg-secondary h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Ignored Items</h5>
+                    <h2 class="card-text">{{ stats.ignored if stats else 0 }}</h2>
+                    <p class="card-text">Marked as ignored</p>
+                </div>
             </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-info">
-            <div class="card-body">
-                <h5 class="card-title">Total Items</h5>
-                <h2 class="card-text">{{ stats.total if stats else 0 }}</h2>
-                <p class="card-text">Total processed</p>
-            </div>
-        </div>
+        </a>
     </div>
 </div>
 
@@ -73,7 +70,6 @@
                                 <th>Date</th>
                                 <th>Total Items</th>
                                 <th>Unmatched</th>
-                                <th>Fixed</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -82,7 +78,6 @@
                                 <td>{{ scan.scan_date|timestamp_to_date }}</td>
                                 <td>{{ scan.total_items }}</td>
                                 <td>{{ scan.unmatched_items }}</td>
-                                <td>{{ scan.fixed_items }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -96,29 +91,7 @@
     </div>
 </div>
 
-<!-- Quick Actions -->
-<div class="row mt-4">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Quick Actions</h5>
-            </div>
-            <div class="card-body">
-                <div class="d-flex flex-wrap">
-                    <a href="/unmatched" class="btn btn-outline-primary me-2 mb-2">
-                        <i class="bi bi-exclamation-triangle"></i> View Unmatched Items
-                    </a>
-                    <a href="/ignored" class="btn btn-outline-secondary me-2 mb-2">
-                        <i class="bi bi-eye-slash"></i> View Ignored Items
-                    </a>
-                    <a href="/fixed" class="btn btn-outline-success me-2 mb-2">
-                        <i class="bi bi-check-circle"></i> View Fixed Items
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+
 {% endblock %}
 
 {% block extra_js %}

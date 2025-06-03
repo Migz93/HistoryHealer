@@ -49,6 +49,10 @@ logging.basicConfig(
 app = Flask(__name__, 
             template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'core', 'templates'),
             static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'core', 'static'))
+
+# Add custom Jinja2 filters
+app.jinja_env.filters['max'] = max
+app.jinja_env.filters['min'] = min
 app.register_blueprint(filters)
 
 def load_default_settings(db):
@@ -76,8 +80,14 @@ tautulli_api = TautulliAPI(
     db.get_setting('tautulli.api_key', '')
 )
 
+# Load TAUTULLI_SECTION_IDS into app.config from database settings
+raw_section_ids = db.get_setting('libraries.section_ids', '1,2')
+app.config['TAUTULLI_SECTION_IDS'] = [s.strip() for s in raw_section_ids.split(',') if s.strip()] if raw_section_ids else []
+logging.info(f"Initial app.config TAUTULLI_SECTION_IDS: {app.config['TAUTULLI_SECTION_IDS']}")
+
 # Initialize history processor
-history_processor = HistoryProcessor(tautulli_api, db)
+# The app.config object contains TAUTULLI_SECTION_IDS which HistoryProcessor now uses
+history_processor = HistoryProcessor(tautulli_api, db, app.config)
 
 @app.route('/')
 def index():
@@ -96,51 +106,96 @@ def unmatched():
     """Show unmatched items."""
     page = request.args.get('page', 1, type=int)
     per_page = 50
+    media_type = request.args.get('media_type', '')
+    sort_by = request.args.get('sort_by')
+    sort_order = request.args.get('sort_order', 'asc')
     
-    # Get unmatched items with pagination
-    items, total = db.get_unmatched_items(page, per_page)
+    # Get unmatched items with pagination and sorting
+    items, total = db.get_unmatched_items(
+        page=page,
+        per_page=per_page,
+        media_type=media_type if media_type else None,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )
     
     # Calculate pagination values
     total_pages = (total + per_page - 1) // per_page
     has_prev = page > 1
     has_next = page < total_pages
     
-    return render_template('unmatched.html', items=items, page=page, total_pages=total_pages, 
-                          has_prev=has_prev, has_next=has_next, total_items=total)
+    return render_template('unmatched.html', 
+                          items=items, 
+                          page=page, 
+                          total_pages=total_pages,
+                          has_prev=has_prev, 
+                          has_next=has_next, 
+                          total_items=total,
+                          media_type=media_type,
+                          sort_by=sort_by,
+                          sort_order=sort_order)
 
 @app.route('/ignored')
 def ignored():
     """Show ignored items."""
     page = request.args.get('page', 1, type=int)
     per_page = 50
+    sort_by = request.args.get('sort_by')
+    sort_order = request.args.get('sort_order', 'asc')
     
-    # Get ignored items with pagination
-    items, total = db.get_ignored_items(page, per_page)
+    # Get ignored items with pagination and sorting
+    items, total = db.get_ignored_items(
+        page=page,
+        per_page=per_page,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )
     
     # Calculate pagination values
     total_pages = (total + per_page - 1) // per_page
     has_prev = page > 1
     has_next = page < total_pages
     
-    return render_template('ignored.html', items=items, page=page, total_pages=total_pages, 
-                          has_prev=has_prev, has_next=has_next, total_items=total)
+    return render_template('ignored.html', 
+                          items=items, 
+                          page=page, 
+                          total_pages=total_pages,
+                          has_prev=has_prev, 
+                          has_next=has_next, 
+                          total_items=total,
+                          sort_by=sort_by,
+                          sort_order=sort_order)
 
 @app.route('/fixed')
 def fixed():
     """Show fixed items."""
     page = request.args.get('page', 1, type=int)
     per_page = 50
+    sort_by = request.args.get('sort_by')
+    sort_order = request.args.get('sort_order', 'asc')
     
-    # Get fixed items with pagination
-    items, total = db.get_fixed_items(page, per_page)
+    # Get fixed items with pagination and sorting
+    items, total = db.get_fixed_items(
+        page=page,
+        per_page=per_page,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )
     
     # Calculate pagination values
     total_pages = (total + per_page - 1) // per_page
     has_prev = page > 1
     has_next = page < total_pages
     
-    return render_template('fixed.html', items=items, page=page, total_pages=total_pages, 
-                          has_prev=has_prev, has_next=has_next, total_items=total)
+    return render_template('fixed.html', 
+                          items=items, 
+                          page=page, 
+                          total_pages=total_pages,
+                          has_prev=has_prev, 
+                          has_next=has_next, 
+                          total_items=total,
+                          sort_by=sort_by,
+                          sort_order=sort_order)
 
 @app.route('/api/scan', methods=['POST'])
 def api_scan():
@@ -171,8 +226,8 @@ def api_scan():
         # Create a new Tautulli API client with the latest settings
         current_api = TautulliAPI(base_url, api_key)
         
-        # Create a temporary history processor with the current API client
-        temp_processor = HistoryProcessor(current_api, db)
+        # Create a temporary history processor with the current API client and app config
+        temp_processor = HistoryProcessor(current_api, db, app.config)
         
         # Start scan with the updated client
         result = temp_processor.scan_history(section_ids, start_date, end_date)
@@ -192,15 +247,17 @@ def api_scan():
 def api_fix_all():
     """API endpoint to attempt to fix all unmatched items."""
     try:
-        result = history_processor.fix_all_unmatched()
+        # Get unmatched items
+        items = db.get_unmatched_items(include_ignored=False, include_fixed=False)
+        total_items = len(items)
         
-        if result['success']:
-            return jsonify({
-                'success': True, 
-                'message': f"Fix attempt completed. Fixed {result['fixed']} of {result['total']} items."
-            })
-        else:
-            return jsonify({'success': False, 'message': result['message']})
+        # Attempt to fix all items
+        fixed_count = history_processor.fix_all_unmatched()
+        
+        return jsonify({
+            'success': True, 
+            'message': f"Fix attempt completed. Fixed {fixed_count} of {total_items} items."
+        })
     except Exception as e:
         logging.exception("Error during fix all")
         return jsonify({'success': False, 'message': str(e)})
@@ -211,15 +268,13 @@ def api_fix_item(item_id):
     try:
         result = history_processor.fix_unmatched_item(item_id)
         
-        if result['success']:
+        if result:
             return jsonify({
                 'success': True, 
-                'message': f"Item fixed successfully.",
-                'new_rating_key': result.get('new_rating_key', None),
-                'item': result.get('item', {})
+                'message': f"Item fixed successfully."
             })
         else:
-            return jsonify({'success': False, 'message': result['message']})
+            return jsonify({'success': False, 'message': "Failed to fix item"})
     except Exception as e:
         logging.exception(f"Error fixing item {item_id}")
         return jsonify({'success': False, 'message': str(e)})
@@ -237,7 +292,15 @@ def manual_fix(item_id):
         if item['status'] != 'unmatched':
             return redirect(url_for('unmatched'))
         
-        return render_template('manual_fix.html', item=item)
+        # Parse the stored JSON data
+        try:
+            import json
+            item_data = json.loads(item['json_data'])
+        except (json.JSONDecodeError, KeyError) as e:
+            logging.error(f"Error parsing item JSON data: {e}")
+            return render_template('error.html', message="Error parsing item data")
+        
+        return render_template('manual_fix.html', item=item, item_data=item_data)
     except Exception as e:
         logging.exception(f"Error loading manual fix page for item {item_id}")
         return render_template('error.html', message=str(e))
@@ -252,11 +315,12 @@ def api_manual_fix_search():
             return jsonify({'success': False, 'message': 'No data provided'})
         
         item_id = data.get('item_id')
-        search_term = data.get('search_term')
+        search_query = data.get('search_query')
         media_type = data.get('media_type')
+        guid = data.get('guid')
         
-        if not all([item_id, search_term, media_type]):
-            return jsonify({'success': False, 'message': 'Missing required parameters'})
+        if not all([item_id, search_query, media_type]):
+            return jsonify({'success': False, 'message': 'Missing required parameters: item_id, search_query, and media_type'})
         
         # Get the unmatched item
         item = db.get_item_by_id(item_id)
@@ -267,39 +331,35 @@ def api_manual_fix_search():
         if item['status'] != 'unmatched':
             return jsonify({'success': False, 'message': 'Item is not unmatched'})
         
-        # Search for matches
-        if media_type == 'movie':
-            search_results = tautulli_api.search_movie(search_term)
-        elif media_type == 'show':
-            search_results = tautulli_api.search_show(search_term)
-        elif media_type == 'season':
-            # For seasons, search for the show first
-            search_results = tautulli_api.search_show(search_term)
-            # Then get the seasons for each show
-            for result in search_results:
-                if 'rating_key' in result:
-                    seasons = tautulli_api.get_seasons(result['rating_key'])
-                    result['seasons'] = seasons
-        elif media_type == 'episode':
-            # For episodes, search for the show first
-            search_results = tautulli_api.search_show(search_term)
-            # Then get the seasons for each show
-            for result in search_results:
-                if 'rating_key' in result:
-                    seasons = tautulli_api.get_seasons(result['rating_key'])
-                    result['seasons'] = seasons
-                    # Then get episodes for each season
-                    for season in seasons:
-                        if 'rating_key' in season:
-                            episodes = tautulli_api.get_episodes(season['rating_key'])
-                            season['episodes'] = episodes
-        else:
-            return jsonify({'success': False, 'message': 'Invalid media type'})
+        # Get the JSON data from the item to check year
+        try:
+            item_json = json.loads(item['json_data'])
+            year = item_json.get('year')
+        except (json.JSONDecodeError, KeyError):
+            year = None
+
+        # Search using the Tautulli API - for manual fixes, we want all results
+        results = tautulli_api.search_title(search_query, None, media_type, history_year=None, manual_search=True)
+        
+        # Process results into a format suitable for the frontend
+        matches = []
+        if results and isinstance(results, list):
+            for result in results:
+                # Still mark potential matches to help the user
+                is_guid_match = result.get('guid') == guid
+                is_year_match = str(result.get('year', '')) == str(year) if year and result.get('year') else False
+                
+                matches.append({
+                    'result': result,
+                    'is_match': is_guid_match or is_year_match,
+                    'is_guid_match': is_guid_match,
+                    'is_year_match': is_year_match
+                })
         
         return jsonify({
             'success': True,
-            'results': search_results,
-            'item': item
+            'matches': matches,
+            'raw_response': results
         })
     except Exception as e:
         logging.exception("Error during manual fix search")
@@ -332,16 +392,65 @@ def api_manual_fix_update():
         # Update the item with the new rating key
         db.update_item_rating_key(item_id, new_rating_key)
         
-        # Mark the item as fixed
-        db.update_item_status(item_id, 'fixed')
+        # Attempt to update Tautulli
+        tautulli_api_key = db.get_setting('tautulli.api_key')
+        tautulli_url = db.get_setting('tautulli.base_url')
+        fix_details = f'Manually updated rating key to {new_rating_key}'
+        tautulli_updated_successfully = False
+
+        if tautulli_api_key and tautulli_url:
+            try:
+                tautulli = TautulliAPI(tautulli_url, tautulli_api_key)
+                # The item's original rating key is needed for the Tautulli update call
+                original_rating_key = item.get('rating_key') 
+                media_type = item.get('media_type')
+                if tautulli.update_metadata_details(original_rating_key, new_rating_key, media_type):
+                    logging.info(f"Tautulli metadata updated for item {item_id}: {original_rating_key} -> {new_rating_key}")
+                    fix_details += ' (Tautulli updated).' # Append to fix_details
+                    tautulli_updated_successfully = True
+                else:
+                    logging.warning(f"Failed to update Tautulli for item {item_id}. Check Tautulli logs.")
+                    fix_details += ' (Tautulli update FAILED).' # Append to fix_details
+            except Exception as e:
+                logging.error(f"Error during Tautulli update for item {item_id}: {e}")
+                fix_details += f' (Tautulli update error: {e}).' # Append to fix_details
+        else:
+            logging.warning(f"Tautulli not configured. Skipping Tautulli update for item {item_id}.")
+            fix_details += ' (Tautulli not configured).' # Append to fix_details
+
+        # Update the item in the local database with the new rating key and fix details
+        db.update_item_rating_key(item_id, new_rating_key) # Update to the new key first
+        db.mark_item_fixed(item_id, fix_details) # Then mark as fixed with all details
         
         return jsonify({
             'success': True,
-            'message': 'Item updated successfully',
+            'message': 'Item updated successfully. ' + ('Tautulli update successful.' if tautulli_updated_successfully else 'Tautulli update may have failed or was skipped.'),
             'new_rating_key': new_rating_key
         })
     except Exception as e:
         logging.exception("Error during manual fix update")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/revert-item/<int:item_id>', methods=['POST'])
+def api_revert_item(item_id):
+    """API endpoint to revert a fixed item back to unmatched."""
+    try:
+        item = db.get_item_by_id(item_id)
+        if not item:
+            return jsonify({'success': False, 'message': 'Item not found'})
+        
+        if item['status'] != 'fixed':
+            return jsonify({'success': False, 'message': 'Item is not marked as fixed'})
+        
+        # The revert_item_to_unmatched method now handles fetching the original rating key
+        if db.revert_item_to_unmatched(item_id):
+            logging.info(f"Item {item_id} successfully reverted to unmatched.")
+            return jsonify({'success': True, 'message': 'Item reverted to unmatched successfully.'})
+        else:
+            logging.error(f"Failed to revert item {item_id} to unmatched.")
+            return jsonify({'success': False, 'message': 'Failed to revert item. Check logs.'})
+    except Exception as e:
+        logging.exception(f"Error reverting item {item_id}")
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/ignore-items', methods=['POST'])
@@ -445,8 +554,12 @@ def api_save_settings():
         db.set_setting('tautulli.api_key', api_key)
         db.set_setting('history.start_date', start_date)
         db.set_setting('history.end_date', end_date)
-        db.set_setting('libraries.section_ids', section_ids)
+        db.set_setting('libraries.section_ids', section_ids) # Save as comma-separated string to DB
         
+        # Update app.config with the list of section IDs for HistoryProcessor
+        app.config['TAUTULLI_SECTION_IDS'] = [s.strip() for s in section_ids.split(',') if s.strip()] if section_ids else []
+        logging.info(f"Updated app.config TAUTULLI_SECTION_IDS to: {app.config['TAUTULLI_SECTION_IDS']}")
+
         # Update Tautulli API client with new settings
         global tautulli_api
         tautulli_api = TautulliAPI(base_url, api_key)

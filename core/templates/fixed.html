@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "pagination.html" import render_pagination %}
 
 {% block title %}HistoryHealer - Fixed Items{% endblock %}
 
@@ -46,8 +47,16 @@
                         {% endif %}
                     </a>
                 </th>
-                <th>Fixed Date</th>
+                <th>
+                    <a href="?{% if sort_by == 'fix_date' and sort_order == 'asc' %}sort_by=fix_date&sort_order=desc{% else %}sort_by=fix_date&sort_order=asc{% endif %}" class="text-decoration-none">
+                        Fixed Date
+                        {% if sort_by == 'fix_date' %}
+                            <i class="bi bi-arrow-{% if sort_order == 'asc' %}up{% else %}down{% endif %}"></i>
+                        {% endif %}
+                    </a>
+                </th>
                 <th>Fix Details</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -105,6 +114,11 @@
                     {% endif %}
                 </td>
                 <td>{{ subitem.fix_details }}</td>
+                <td>
+                    <button class="btn btn-sm btn-warning revert-item" data-item-id="{{ subitem.id }}" title="Revert to Unmatched">
+                        <i class="bi bi-arrow-counterclockwise"></i> Revert
+                    </button>
+                </td>
             </tr>
             {% endfor %}{% endif %}
             {% else %}
@@ -144,12 +158,19 @@
                     {% endif %}
                 </td>
                 <td>{{ item.fix_details }}</td>
+                <td>
+                    <button class="btn btn-sm btn-warning revert-item" data-item-id="{{ item.id }}" title="Revert to Unmatched">
+                        <i class="bi bi-arrow-counterclockwise"></i> Revert
+                    </button>
+                </td>
             </tr>
             {% endif %}
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+{{ render_pagination(page, total_pages, has_prev, has_next, sort_by, sort_order) }}
 {% else %}
 <div class="alert alert-info">
     No fixed items found.
@@ -171,6 +192,34 @@
             // Toggle expand/collapse icons
             $(this).find(".expand-icon").toggleClass("d-none");
             $(this).find(".collapse-icon").toggleClass("d-none");
+        });
+
+        // Handle revert item click
+        $(document).on('click', '.revert-item', function() {
+            const itemId = $(this).data('item-id');
+            const row = $(this).closest('tr');
+
+            if (!confirm(`Are you sure you want to revert item ${itemId} to unmatched?`)) {
+                return;
+            }
+
+            $.ajax({
+                url: `/api/revert-item/${itemId}`,
+                type: 'POST',
+                success: function(response) {
+                    if (response.success) {
+                        showAlert(response.message, 'success');
+                        // Optionally remove the row or refresh the page
+                        row.fadeOut(500, function() { $(this).remove(); }); 
+                        // Or: window.location.reload();
+                    } else {
+                        showAlert(response.message || 'Failed to revert item.', 'danger');
+                    }
+                },
+                error: function(xhr) {
+                    showAlert('An error occurred: ' + xhr.responseText, 'danger');
+                }
+            });
         });
     });
 </script>

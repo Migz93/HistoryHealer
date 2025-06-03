@@ -3,6 +3,14 @@
 {% block title %}HistoryHealer - Settings{% endblock %}
 
 {% block content %}
+<!-- Floating save button -->
+<div class="position-fixed bottom-0 end-0 m-4" style="z-index: 1050;">
+    <button type="submit" form="settings-form" class="btn btn-primary btn-lg d-flex align-items-center gap-2" 
+            style="border-radius: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+        <i class="bi bi-save"></i>
+        <span>Save Settings</span>
+    </button>
+</div>
 <div id="alerts-container">
     {% if request.args.get('success') %}
     <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -30,7 +38,7 @@
                 <h5 class="card-title mb-0">Configuration</h5>
             </div>
             <div class="card-body">
-                <form action="/api/save-settings" method="POST">
+                <form id="settings-form" action="/api/save-settings" method="POST">
                     <div class="mb-3">
                         <h6 class="fw-bold">Tautulli Connection</h6>
                         <div class="mb-3">
@@ -47,9 +55,8 @@
                         </div>
                         <div class="mb-3">
                             <button type="button" id="test-connection" class="btn btn-outline-primary">
-                                <i class="bi bi-check-circle"></i> Test Connection
+                                <i class="bi bi-arrow-repeat"></i> Test Connection
                             </button>
-                            <div id="connection-result" class="mt-2"></div>
                         </div>
                     </div>
                     
@@ -79,7 +86,7 @@
                         </div>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                    <!-- Save button moved to floating position -->
                 </form>
             </div>
         </div>
@@ -119,16 +126,29 @@
     $(document).ready(function() {
         // Test connection button handler
         $('#test-connection').on('click', function() {
+            const $button = $(this);
             const baseUrl = $('#base_url').val().trim();
             const apiKey = $('#api_key').val().trim();
             
             if (!baseUrl || !apiKey) {
-                showAlert('Please enter both Base URL and API Key', 'warning');
+                $button.removeClass('btn-outline-primary btn-outline-success btn-outline-danger')
+                       .addClass('btn-outline-warning')
+                       .html('<i class="bi bi-exclamation-triangle"></i> Enter URL and API Key');
+                setTimeout(() => {
+                    $button.removeClass('btn-outline-warning')
+                           .addClass('btn-outline-primary')
+                           .html('<i class="bi bi-arrow-repeat"></i> Test Connection');
+                }, 3000);
                 return;
             }
             
-            // Show loading message
-            showLoading('Testing connection...');
+            // Show loading state
+            $button.prop('disabled', true)
+                   .html('<i class="bi bi-arrow-repeat spin"></i> Testing...');
+            
+            // Add spinning animation
+            $('<style>').text('@keyframes spin { 100% { transform: rotate(360deg); } } .spin { animation: spin 1s linear infinite; }')
+                       .appendTo('head');
             
             // Send test request
             $.ajax({
@@ -139,16 +159,29 @@
                     api_key: apiKey
                 },
                 success: function(response) {
-                    hideLoading();
                     if (response.success) {
-                        showAlert(response.message, 'success');
+                        $button.removeClass('btn-outline-primary btn-outline-danger')
+                               .addClass('btn-outline-success')
+                               .html('<i class="bi bi-check-circle"></i> Connection Successful');
                     } else {
-                        showAlert(response.message, 'danger');
+                        $button.removeClass('btn-outline-primary btn-outline-success')
+                               .addClass('btn-outline-danger')
+                               .html('<i class="bi bi-x-circle"></i> Connection Failed');
                     }
                 },
                 error: function(xhr, status, error) {
-                    hideLoading();
-                    showAlert('Error: ' + error, 'danger');
+                    $button.removeClass('btn-outline-primary btn-outline-success')
+                           .addClass('btn-outline-danger')
+                           .html('<i class="bi bi-x-circle"></i> Connection Failed');
+                },
+                complete: function() {
+                    $button.prop('disabled', false);
+                    // Reset button after 3 seconds
+                    setTimeout(() => {
+                        $button.removeClass('btn-outline-success btn-outline-danger')
+                               .addClass('btn-outline-primary')
+                               .html('<i class="bi bi-arrow-repeat"></i> Test Connection');
+                    }, 3000);
                 }
             });
         });
