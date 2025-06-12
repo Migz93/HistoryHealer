@@ -1,6 +1,17 @@
-# HistoryHealer
+<p align="center">
+  <img src="assets/images/Logo.svg" alt="HistoryHealer Logo"/>
+</p>
 
-A web-based application for fixing and repairing Tautulli watch history entries that have become unmatched from their Plex media items. This sometimes happens when upgrading media or if you've deleted media and later on re-added it.
+History Healer is a web-based application for fixing and repairing Tautulli watch history entries that have become unmatched from their Plex media items. This sometimes happens when upgrading media or if you've deleted media and later on re-added it.
+
+# Preview
+
+![Home Page](./assets/screenshots/Screenshot_Home.jpg)
+![Unmatched](./assets/screenshots/Screenshot_Unmatched.jpg)
+![Manual Fix](./assets/screenshots/Screenshot_ManualFix.jpg)
+
+
+## Features
 
 HistoryHealer provides a user-friendly web interface that allows you to:
 
@@ -10,8 +21,6 @@ HistoryHealer provides a user-friendly web interface that allows you to:
 4. Fix individual unmatched items
 5. Ignore items you don't want to fix or can't fix
 6. Track fixed and ignored items
-
-## Features
 
 - **Dashboard**: View statistics and recent scan history
 - **Unmatched Items**: View and manage all unmatched items
