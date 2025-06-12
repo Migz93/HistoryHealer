@@ -5,6 +5,8 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for
 from datetime import datetime
 import json
 
+from core.version import __version__
+
 from core.database import Database
 from core.tautulli_api import TautulliAPI, HistoryProcessor
 from core.filters import filters
@@ -54,6 +56,11 @@ app = Flask(__name__,
 app.jinja_env.filters['max'] = max
 app.jinja_env.filters['min'] = min
 app.register_blueprint(filters)
+
+# Add version to all templates
+@app.context_processor
+def inject_version():
+    return {'version': __version__}
 
 def load_default_settings(db):
     """Load default settings into the database if they don't exist"""
