@@ -1,54 +1,85 @@
-{% macro render_pagination(page, total_pages, has_prev, has_next, sort_by=None, sort_order=None) %}
+{% macro render_pagination(page, total_pages, has_prev, has_next, sort_by=None, sort_order=None, per_page='50', media_type=None) %}
 <nav aria-label="Page navigation" class="mt-4">
-    <ul class="pagination justify-content-center">
-        {# Previous button #}
-        <li class="page-item {% if not has_prev %}disabled{% endif %}">
-            <a class="page-link" href="?page={{ page - 1 }}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}" {% if not has_prev %}tabindex="-1" aria-disabled="true"{% endif %}>
-                Previous
-            </a>
-        </li>
+    <div class="d-flex justify-content-center align-items-center gap-3 flex-wrap">
+        {# Pagination controls #}
+        <ul class="pagination mb-0">
+            {# Previous button #}
+            <li class="page-item {% if not has_prev %}disabled{% endif %}">
+                <a class="page-link" href="?page={{ page - 1 }}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}{% if per_page %}&per_page={{ per_page }}{% endif %}" {% if not has_prev %}tabindex="-1" aria-disabled="true"{% endif %}>
+                    Previous
+                </a>
+            </li>
 
-        {# First page #}
-        {% if page > 3 %}
-        <li class="page-item">
-            <a class="page-link" href="?page=1{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}">1</a>
-        </li>
-        {% if page > 4 %}
-        <li class="page-item disabled">
-            <span class="page-link">...</span>
-        </li>
-        {% endif %}
-        {% endif %}
+            {# First page #}
+            {% if page > 3 %}
+            <li class="page-item">
+                <a class="page-link" href="?page=1{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}{% if per_page %}&per_page={{ per_page }}{% endif %}">1</a>
+            </li>
+            {% if page > 4 %}
+            <li class="page-item disabled">
+                <span class="page-link">...</span>
+            </li>
+            {% endif %}
+            {% endif %}
 
-        {# Page numbers #}
-        {% for p in range((1|max(page - 2)), ((total_pages + 1)|min(page + 3))) %}
-        <li class="page-item {% if p == page %}active{% endif %}">
-            <a class="page-link" href="?page={{ p }}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}">{{ p }}</a>
-        </li>
-        {% endfor %}
+            {# Page numbers #}
+            {% for p in range((1|max(page - 2)), ((total_pages + 1)|min(page + 3))) %}
+            <li class="page-item {% if p == page %}active{% endif %}">
+                <a class="page-link" href="?page={{ p }}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}{% if per_page %}&per_page={{ per_page }}{% endif %}">{{ p }}</a>
+            </li>
+            {% endfor %}
 
-        {# Last page #}
-        {% if page < total_pages - 2 %}
-        {% if page < total_pages - 3 %}
-        <li class="page-item disabled">
-            <span class="page-link">...</span>
-        </li>
-        {% endif %}
-        <li class="page-item">
-            <a class="page-link" href="?page={{ total_pages }}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}">{{ total_pages }}</a>
-        </li>
-        {% endif %}
+            {# Last page #}
+            {% if page < total_pages - 2 %}
+            {% if page < total_pages - 3 %}
+            <li class="page-item disabled">
+                <span class="page-link">...</span>
+            </li>
+            {% endif %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ total_pages }}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}{% if per_page %}&per_page={{ per_page }}{% endif %}">{{ total_pages }}</a>
+            </li>
+            {% endif %}
 
-        {# Next button #}
-        <li class="page-item {% if not has_next %}disabled{% endif %}">
-            <a class="page-link" href="?page={{ page + 1 }}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}" {% if not has_next %}tabindex="-1" aria-disabled="true"{% endif %}>
-                Next
-            </a>
-        </li>
-    </ul>
+            {# Next button #}
+            <li class="page-item {% if not has_next %}disabled{% endif %}">
+                <a class="page-link" href="?page={{ page + 1 }}{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}{% if per_page %}&per_page={{ per_page }}{% endif %}" {% if not has_next %}tabindex="-1" aria-disabled="true"{% endif %}>
+                    Next
+                </a>
+            </li>
+        </ul>
+
+        {# Page size selector - moved next to pagination #}
+        <div class="d-flex align-items-center">
+            <span class="text-muted me-2 small">Show:</span>
+            <div class="btn-group btn-group-sm" role="group">
+                {% set current_per_page = per_page|string %}
+                <a href="?page=1{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}&per_page=50" 
+                   class="btn btn-{% if current_per_page == '50' %}primary{% else %}outline-primary{% endif %}">
+                    50
+                </a>
+                <a href="?page=1{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}&per_page=100" 
+                   class="btn btn-{% if current_per_page == '100' %}primary{% else %}outline-primary{% endif %}">
+                    100
+                </a>
+                <a href="?page=1{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}&per_page=200" 
+                   class="btn btn-{% if current_per_page == '200' %}primary{% else %}outline-primary{% endif %}">
+                    200
+                </a>
+                <a href="?page=1{% if sort_by %}&sort_by={{ sort_by }}{% endif %}{% if sort_order %}&sort_order={{ sort_order }}{% endif %}{% if media_type %}&media_type={{ media_type }}{% endif %}&per_page=all" 
+                   class="btn btn-{% if current_per_page == 'all' %}primary{% else %}outline-primary{% endif %}">
+                    All
+                </a>
+            </div>
+        </div>
+    </div>
 </nav>
 
-<div class="text-center text-muted">
-    Page {{ page }} of {{ total_pages }} ({{ total_items }} items)
+<div class="text-center text-muted mt-2">
+    {% if per_page == 'all' %}
+        Showing all {{ total_items }} items
+    {% else %}
+        Page {{ page }} of {{ total_pages }} ({{ total_items }} items total)
+    {% endif %}
 </div>
 {% endmacro %}

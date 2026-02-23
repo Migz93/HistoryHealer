@@ -12,7 +12,7 @@
             <i class="bi bi-search"></i> Rescan
         </button>
         <button type="button" id="fix-all-button" class="btn btn-success">
-            <i class="bi bi-wrench"></i> Attempt Fix All
+            <i class="bi bi-wrench"></i> Fix All
         </button>
     </div>
 </div>
@@ -127,31 +127,88 @@
         
         // Handle Fix All button
         $("#fix-all-button").click(function() {
-            if (confirm("Attempt to fix all unmatched items? This may take a while.")) {
-                showLoading("Attempting to fix all items...");
+            showConfirmModal(
+                "Fix All Unmatched Items",
+                "Attempt to fix all unmatched items? This may take a while.",
+                function() {
+                    // Get list of unmatched items first
+                    $.ajax({
+                        url: "/api/get-unmatched-ids",
+                        type: "GET",
+                        success: function(response) {
+                            if (response.success && response.item_ids.length > 0) {
+                                fixItemsWithProgress(response.item_ids);
+                            } else {
+                                showAlert("No unmatched items to fix.", "info");
+                            }
+                        },
+                        error: function() {
+                            showAlert("Failed to get unmatched items.", "danger");
+                        }
+                    });
+                }
+            );
+        });
+        
+        // Function to fix items with progress tracking
+        function fixItemsWithProgress(itemIds) {
+            const total = itemIds.length;
+            let current = 0;
+            let fixed = 0;
+            let failed = 0;
+            
+            showProgressModal(total);
+            
+            function processNext() {
+                // Check if cancel was requested
+                if (cancelRequested) {
+                    hideProgressModal();
+                    showAlert(`Cancelled. Fixed ${fixed} items before cancellation.`, "info");
+                    setTimeout(function() {
+                        location.reload();
+                    }, 1500);
+                    return;
+                }
+                
+                if (current >= total) {
+                    // All done
+                    hideProgressModal();
+                    if (failed === 0) {
+                        showAlert(`Successfully fixed ${fixed} items.`, "success");
+                    } else {
+                        showAlert(`Fixed ${fixed} items. Failed to fix ${failed} items.`, "warning");
+                    }
+                    setTimeout(function() {
+                        location.reload();
+                    }, 1500);
+                    return;
+                }
+                
+                const itemId = itemIds[current];
+                current++;
+                
+                updateProgress(current, total, `Processing item ${current} of ${total}...`);
                 
                 $.ajax({
-                    url: "/api/fix-all",
+                    url: `/api/fix-item/${itemId}`,
                     type: "POST",
                     success: function(response) {
-                        hideLoading();
                         if (response.success) {
-                            showAlert(response.message, "success");
-                            // Reload the page to update stats
-                            setTimeout(function() {
-                                location.reload();
-                            }, 2000);
+                            fixed++;
                         } else {
-                            showAlert(response.message, "danger");
+                            failed++;
                         }
+                        processNext();
                     },
                     error: function() {
-                        hideLoading();
-                        showAlert("An error occurred while fixing items.", "danger");
+                        failed++;
+                        processNext();
                     }
                 });
             }
-        });
+            
+            processNext();
+        }
     });
 </script>
 {% endblock %}

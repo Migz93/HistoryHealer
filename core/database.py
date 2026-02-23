@@ -10,7 +10,6 @@ class Database:
         """Initialize database connection and create tables if they don't exist."""
         self.db_path = db_path
         self.conn = None
-        self.cursor = None
         self.lock = threading.RLock()  # Reentrant lock for thread safety
         self.connect()
         self.create_tables()
@@ -20,17 +19,17 @@ class Database:
         try:
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self.conn.row_factory = sqlite3.Row
-            self.cursor = self.conn.cursor()
         except sqlite3.Error as e:
-            print(f"Database connection error: {e}")
+            logging.error(f"Database connection error: {e}")
             raise
     
     def create_tables(self):
         """Create necessary tables if they don't exist."""
         with self.lock:
             try:
+                cursor = self.conn.cursor()
                 # Create unmatched_items table
-                self.cursor.execute('''
+                cursor.execute('''
                     CREATE TABLE IF NOT EXISTS unmatched_items (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         rating_key TEXT,
@@ -53,7 +52,7 @@ class Database:
                 ''')
                 
                 # Create scans table to track scan history
-                self.cursor.execute('''
+                cursor.execute('''
                     CREATE TABLE IF NOT EXISTS scans (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         scan_date INTEGER,
@@ -64,7 +63,7 @@ class Database:
                 ''')
                 
                 # Create settings table to store application settings
-                self.cursor.execute('''
+                cursor.execute('''
                     CREATE TABLE IF NOT EXISTS settings (
                         key TEXT PRIMARY KEY,
                         value TEXT,
@@ -72,9 +71,10 @@ class Database:
                     )
                 ''')
                 
+                cursor.close()
                 self.conn.commit()
             except sqlite3.Error as e:
-                print(f"Error creating tables: {e}")
+                logging.error(f"Error creating tables: {e}")
                 self.conn.rollback()
                 raise
     
@@ -87,15 +87,18 @@ class Database:
         """Add a new scan record and return its ID."""
         with self.lock:
             try:
+                cursor = self.conn.cursor()
                 now = int(datetime.now().timestamp())
-                self.cursor.execute(
+                cursor.execute(
                     "INSERT INTO scans (scan_date, total_items, unmatched_items, fixed_items) VALUES (?, ?, ?, ?)",
                     (now, total_items, unmatched_items, 0)
                 )
+                lastrowid = cursor.lastrowid
+                cursor.close()
                 self.conn.commit()
-                return self.cursor.lastrowid
+                return lastrowid
             except sqlite3.Error as e:
-                print(f"Error adding scan: {e}")
+                logging.error(f"Error adding scan: {e}")
                 self.conn.rollback()
                 return None
     
@@ -103,13 +106,15 @@ class Database:
         """Update the fixed items count for a scan."""
         with self.lock:
             try:
-                self.cursor.execute(
+                cursor = self.conn.cursor()
+                cursor.execute(
                     "UPDATE scans SET fixed_items = ? WHERE id = ?",
                     (fixed_count, scan_id)
                 )
+                cursor.close()
                 self.conn.commit()
             except sqlite3.Error as e:
-                print(f"Error updating scan: {e}")
+                logging.error(f"Error updating scan: {e}")
                 self.conn.rollback()
     
     def add_unmatched_item(self, item, scan_id):
@@ -131,7 +136,8 @@ class Database:
                 date = item.get('date', 0)
                 watched_date = datetime.fromtimestamp(int(date)).strftime('%Y-%m-%d %H:%M:%S') if date else ''
                 
-                self.cursor.execute('''
+                cursor = self.conn.cursor()
+                cursor.execute('''
                     INSERT INTO unmatched_items 
                     (rating_key, grandparent_rating_key, media_type, title, year, grandparent_title, 
                     parent_title, guid, date, watched_date, json_data, scan_id)
@@ -139,10 +145,12 @@ class Database:
                 ''', (rating_key, grandparent_rating_key, media_type, title, year, grandparent_title, 
                       parent_title, guid, date, watched_date, json_data, scan_id))
                 
+                lastrowid = cursor.lastrowid
+                cursor.close()
                 self.conn.commit()
-                return self.cursor.lastrowid
+                return lastrowid
             except sqlite3.Error as e:
-                print(f"Error adding unmatched item: {e}")
+                logging.error(f"Error adding unmatched item: {e}")
                 self.conn.rollback()
                 return None
     
@@ -200,9 +208,10 @@ class Database:
                 
                 # If pagination is requested
                 if page is not None and per_page is not None:
+                    cursor = self.conn.cursor()
                     # Get total count
-                    self.cursor.execute(count_query)
-                    total = self.cursor.fetchone()['count']
+                    cursor.execute(count_query)
+                    total = cursor.fetchone()['count']
                     
                     # Calculate offset
                     offset = (page - 1) * per_page
@@ -211,8 +220,9 @@ class Database:
                     base_query += f" LIMIT {per_page} OFFSET {offset}"
                     
                     # Execute query
-                    self.cursor.execute(base_query)
-                    items = self.cursor.fetchall()
+                    cursor.execute(base_query)
+                    items = cursor.fetchall()
+                    cursor.close()
                     
                     # Group similar items if requested
                     if group_items:
@@ -221,8 +231,10 @@ class Database:
                     return items, total
                 else:
                     # No pagination, return all items
-                    self.cursor.execute(base_query)
-                    items = self.cursor.fetchall()
+                    cursor = self.conn.cursor()
+                    cursor.execute(base_query)
+                    items = cursor.fetchall()
+                    cursor.close()
                     
                     # Group similar items if requested
                     if group_items:
@@ -248,8 +260,10 @@ class Database:
         """
         with self.lock:
             try:
-                self.cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
-                result = self.cursor.fetchone()
+                cursor = self.conn.cursor()
+                cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+                result = cursor.fetchone()
+                cursor.close()
                 if result:
                     return result['value']
                 return default
@@ -269,11 +283,13 @@ class Database:
         """
         with self.lock:
             try:
+                cursor = self.conn.cursor()
                 now = int(datetime.now().timestamp())
-                self.cursor.execute(
+                cursor.execute(
                     "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
                     (key, str(value), now)
                 )
+                cursor.close()
                 self.conn.commit()
                 return True
             except sqlite3.Error as e:
@@ -289,8 +305,10 @@ class Database:
         """
         with self.lock:
             try:
-                self.cursor.execute("SELECT key, value FROM settings")
-                settings = self.cursor.fetchall()
+                cursor = self.conn.cursor()
+                cursor.execute("SELECT key, value FROM settings")
+                settings = cursor.fetchall()
+                cursor.close()
                 return {item['key']: item['value'] for item in settings}
             except sqlite3.Error as e:
                 logging.error(f"Error getting all settings: {e}")
@@ -307,7 +325,9 @@ class Database:
         """
         with self.lock:
             try:
-                self.cursor.execute("DELETE FROM settings WHERE key = ?", (key,))
+                cursor = self.conn.cursor()
+                cursor.execute("DELETE FROM settings WHERE key = ?", (key,))
+                cursor.close()
                 self.conn.commit()
                 return True
             except sqlite3.Error as e:
@@ -392,8 +412,10 @@ class Database:
         """Get a specific unmatched item by ID."""
         with self.lock:
             try:
-                self.cursor.execute("SELECT * FROM unmatched_items WHERE id = ?", (item_id,))
-                item = self.cursor.fetchone()
+                cursor = self.conn.cursor()
+                cursor.execute("SELECT * FROM unmatched_items WHERE id = ?", (item_id,))
+                item = cursor.fetchone()
+                cursor.close()
                 if item:
                     # Convert to dict and add status based on flags
                     item_dict = dict(item)
@@ -425,26 +447,29 @@ class Database:
         """
         with self.lock:
             try:
+                cursor = self.conn.cursor()
                 now = int(datetime.now().timestamp())
                 if status == 'fixed':
-                    self.cursor.execute(
+                    cursor.execute(
                         "UPDATE unmatched_items SET fixed = 1, ignored = 0, fix_date = ? WHERE id = ?",
                         (now, item_id)
                     )
                 elif status == 'ignored':
-                    self.cursor.execute(
+                    cursor.execute(
                         "UPDATE unmatched_items SET ignored = 1, fixed = 0 WHERE id = ?",
                         (item_id,)
                     )
                 elif status == 'unmatched':
-                    self.cursor.execute(
+                    cursor.execute(
                         "UPDATE unmatched_items SET ignored = 0, fixed = 0 WHERE id = ?",
                         (item_id,)
                     )
                 else:
                     logging.error(f"Invalid status: {status}")
+                    cursor.close()
                     return False
                 
+                cursor.close()
                 self.conn.commit()
                 return True
             except sqlite3.Error as e:
@@ -464,10 +489,12 @@ class Database:
         """
         with self.lock:
             try:
-                self.cursor.execute(
+                cursor = self.conn.cursor()
+                cursor.execute(
                     "UPDATE unmatched_items SET rating_key = ? WHERE id = ?",
                     (new_rating_key, item_id)
                 )
+                cursor.close()
                 self.conn.commit()
                 return True
             except sqlite3.Error as e:
@@ -479,11 +506,13 @@ class Database:
         """Mark an item as fixed with details about the fix."""
         with self.lock:
             try:
+                cursor = self.conn.cursor()
                 now = int(datetime.now().timestamp())
-                self.cursor.execute(
+                cursor.execute(
                     "UPDATE unmatched_items SET fixed = 1, fix_date = ?, fix_details = ? WHERE id = ?",
                     (now, fix_details, item_id)
                 )
+                cursor.close()
                 self.conn.commit()
                 return True
             except sqlite3.Error as e:
@@ -495,21 +524,24 @@ class Database:
         """Revert a fixed item back to unmatched status, restoring original rating key."""
         with self.lock:
             try:
+                cursor = self.conn.cursor()
                 # First, get the item to access its json_data
-                self.cursor.execute("SELECT json_data FROM unmatched_items WHERE id = ?", (item_id,))
-                item_row = self.cursor.fetchone()
+                cursor.execute("SELECT json_data FROM unmatched_items WHERE id = ?", (item_id,))
+                item_row = cursor.fetchone()
                 if not item_row:
+                    cursor.close()
                     logging.error(f"Item with ID {item_id} not found for revert.")
                     return False
                 
                 item_data = json.loads(item_row['json_data'])
                 original_rating_key = item_data.get('rating_key')
                 if not original_rating_key:
+                    cursor.close()
                     logging.error(f"Original rating_key not found in json_data for item {item_id}.")
                     # Fallback or decide how to handle - for now, prevent update if no original key
                     return False
 
-                self.cursor.execute(
+                cursor.execute(
                     """UPDATE unmatched_items SET 
                        fixed = 0, 
                        ignored = 0, 
@@ -519,6 +551,7 @@ class Database:
                        WHERE id = ?""",
                     (original_rating_key, item_id)
                 )
+                cursor.close()
                 self.conn.commit()
                 logging.info(f"Item {item_id} reverted to unmatched with rating_key {original_rating_key}.")
                 return True
@@ -537,20 +570,22 @@ class Database:
         
         with self.lock:
             try:
+                cursor = self.conn.cursor()
                 # Convert to int value for SQLite
                 ignored_val = 1 if ignored else 0
                 
                 # Create placeholders for SQL query
                 placeholders = ', '.join(['?'] * len(item_ids))
                 
-                self.cursor.execute(
+                cursor.execute(
                     f"UPDATE unmatched_items SET ignored = ? WHERE id IN ({placeholders})",
                     [ignored_val] + item_ids
                 )
+                cursor.close()
                 self.conn.commit()
                 return True
             except sqlite3.Error as e:
-                print(f"Error marking items as ignored: {e}")
+                logging.error(f"Error marking items as ignored: {e}")
                 self.conn.rollback()
                 return False
     
@@ -590,13 +625,15 @@ class Database:
                 # Add pagination
                 query += " LIMIT ? OFFSET ?"
                 
+                cursor = self.conn.cursor()
                 # Get total count
-                self.cursor.execute("SELECT COUNT(*) as count FROM unmatched_items WHERE ignored = 1 AND fixed = 0")
-                total = self.cursor.fetchone()['count']
+                cursor.execute("SELECT COUNT(*) as count FROM unmatched_items WHERE ignored = 1 AND fixed = 0")
+                total = cursor.fetchone()['count']
                 
                 # Get items for current page
-                self.cursor.execute(query, (per_page, offset))
-                items = self.cursor.fetchall()
+                cursor.execute(query, (per_page, offset))
+                items = cursor.fetchall()
+                cursor.close()
                 
                 return items, total
             except sqlite3.Error as e:
@@ -641,13 +678,15 @@ class Database:
                 # Add pagination
                 query += " LIMIT ? OFFSET ?"
                 
+                cursor = self.conn.cursor()
                 # Get total count
-                self.cursor.execute("SELECT COUNT(*) as count FROM unmatched_items WHERE fixed = 1")
-                total = self.cursor.fetchone()['count']
+                cursor.execute("SELECT COUNT(*) as count FROM unmatched_items WHERE fixed = 1")
+                total = cursor.fetchone()['count']
                 
                 # Get items for current page
-                self.cursor.execute(query, (per_page, offset))
-                items = self.cursor.fetchall()
+                cursor.execute(query, (per_page, offset))
+                items = cursor.fetchall()
+                cursor.close()
                 
                 return items, total
             except sqlite3.Error as e:
@@ -658,17 +697,21 @@ class Database:
         """Get the history of all scans."""
         with self.lock:
             try:
-                self.cursor.execute("SELECT * FROM scans ORDER BY scan_date DESC")
-                return self.cursor.fetchall()
+                cursor = self.conn.cursor()
+                cursor.execute("SELECT * FROM scans ORDER BY scan_date DESC")
+                scans = cursor.fetchall()
+                cursor.close()
+                return scans
             except sqlite3.Error as e:
-                print(f"Error getting scan history: {e}")
+                logging.error(f"Error getting scan history: {e}")
                 return []
     
     def get_stats(self):
         """Get statistics about unmatched and fixed items."""
         with self.lock:
             try:
-                self.cursor.execute("""
+                cursor = self.conn.cursor()
+                cursor.execute("""
                     SELECT 
                         COUNT(*) as total,
                         SUM(CASE WHEN fixed = 0 AND ignored = 0 THEN 1 ELSE 0 END) as unmatched,
@@ -676,9 +719,11 @@ class Database:
                         SUM(CASE WHEN ignored = 1 THEN 1 ELSE 0 END) as ignored
                     FROM unmatched_items
                 """)
-                return self.cursor.fetchone()
+                stats = cursor.fetchone()
+                cursor.close()
+                return stats
             except sqlite3.Error as e:
-                print(f"Error getting stats: {e}")
+                logging.error(f"Error getting stats: {e}")
                 return None
                 
     def item_exists(self, item):
@@ -708,10 +753,12 @@ class Database:
                     query = "SELECT id FROM unmatched_items WHERE rating_key = ? AND media_type = ? AND guid = ?"
                     params = (rating_key, media_type, guid)
                 
-                self.cursor.execute(query, params)
-                result = self.cursor.fetchone()
+                cursor = self.conn.cursor()
+                cursor.execute(query, params)
+                result = cursor.fetchone()
+                cursor.close()
                 
                 return result is not None
             except sqlite3.Error as e:
-                print(f"Error checking if item exists: {e}")
+                logging.error(f"Error checking if item exists: {e}")
                 return False

@@ -3,11 +3,18 @@ import logging
 from datetime import datetime
 
 class TautulliAPI:
-    def __init__(self, base_url, api_key):
-        """Initialize the Tautulli API client."""
+    def __init__(self, base_url, api_key, timeout=30):
+        """Initialize the Tautulli API client.
+        
+        Args:
+            base_url: The base URL of the Tautulli server
+            api_key: The API key for authentication
+            timeout: Request timeout in seconds (default: 30)
+        """
         self.base_url = base_url
         self.api_key = api_key
         self.api_endpoint = f"{base_url}/api/v2"
+        self.timeout = timeout
         
     def _make_request(self, cmd, params=None):
         """Make a request to the Tautulli API."""
@@ -18,7 +25,7 @@ class TautulliAPI:
         params['cmd'] = cmd
         
         try:
-            response = requests.get(self.api_endpoint, params=params)
+            response = requests.get(self.api_endpoint, params=params, timeout=self.timeout)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:

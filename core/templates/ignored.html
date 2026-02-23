@@ -7,11 +7,16 @@
 <div id="alerts-container"></div>
 
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">Ignored Items</h1>
+    <h1 class="h2">Ignored Items <span class="badge bg-primary">{{ total_items }}</span></h1>
     <div class="btn-toolbar mb-2 mb-md-0">
-        <button type="button" id="unignore-selected-button" class="btn btn-primary" disabled>
-            <i class="bi bi-eye"></i> Unignore Selected
-        </button>
+        <div class="btn-group me-2">
+            <button type="button" id="fix-all-ignored-button" class="btn btn-success">
+                <i class="bi bi-wrench"></i> Fix All
+            </button>
+            <button type="button" id="unignore-selected-button" class="btn btn-primary" disabled>
+                <i class="bi bi-eye"></i> Unignore Selected
+            </button>
+        </div>
     </div>
 </div>
 
@@ -182,7 +187,7 @@
     </table>
 </div>
 
-{{ render_pagination(page, total_pages, has_prev, has_next, sort_by, sort_order) }}
+{{ render_pagination(page, total_pages, has_prev, has_next, sort_by, sort_order, per_page) }}
 {% else %}
 <div class="alert alert-info">
     No ignored items found.
@@ -283,6 +288,91 @@
                 }
             }
         });
+        
+        // Fix All Ignored button
+        $("#fix-all-ignored-button").click(function() {
+            showConfirmModal(
+                "Fix All Ignored Items",
+                "Attempt to fix all ignored items? This may take a while.",
+                function() {
+                    // Get list of ignored items first
+                    $.ajax({
+                        url: "/api/get-ignored-ids",
+                        type: "GET",
+                        success: function(response) {
+                            if (response.success && response.item_ids.length > 0) {
+                                fixIgnoredItemsWithProgress(response.item_ids);
+                            } else {
+                                showAlert("No ignored items to fix.", "info");
+                            }
+                        },
+                        error: function() {
+                            showAlert("Failed to get ignored items.", "danger");
+                        }
+                    });
+                }
+            );
+        });
+        
+        // Function to fix ignored items with progress tracking
+        function fixIgnoredItemsWithProgress(itemIds) {
+            const total = itemIds.length;
+            let current = 0;
+            let fixed = 0;
+            let failed = 0;
+            
+            showProgressModal(total);
+            
+            function processNext() {
+                // Check if cancel was requested
+                if (cancelRequested) {
+                    hideProgressModal();
+                    showAlert(`Cancelled. Fixed ${fixed} items before cancellation.`, "info");
+                    setTimeout(function() {
+                        location.reload();
+                    }, 1500);
+                    return;
+                }
+                
+                if (current >= total) {
+                    // All done
+                    hideProgressModal();
+                    if (failed === 0) {
+                        showAlert(`Successfully fixed ${fixed} ignored items.`, "success");
+                    } else {
+                        showAlert(`Fixed ${fixed} items. Failed to fix ${failed} items.`, "warning");
+                    }
+                    setTimeout(function() {
+                        location.reload();
+                    }, 1500);
+                    return;
+                }
+                
+                const itemId = itemIds[current];
+                current++;
+                
+                updateProgress(current, total, `Processing item ${current} of ${total}...`);
+                
+                $.ajax({
+                    url: `/api/fix-item/${itemId}`,
+                    type: "POST",
+                    success: function(response) {
+                        if (response.success) {
+                            fixed++;
+                        } else {
+                            failed++;
+                        }
+                        processNext();
+                    },
+                    error: function() {
+                        failed++;
+                        processNext();
+                    }
+                });
+            }
+            
+            processNext();
+        }
         
         // Helper function to get selected item IDs
         function getSelectedItemIds() {
